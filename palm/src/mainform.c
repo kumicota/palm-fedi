@@ -190,7 +190,7 @@ static void ShowLoading(const char *msg)
         RenderMessage(&r, msg);
 }
 
-static void Load(Boolean older)
+static Err Load(Boolean older)
 {
     Int16 oldCount = gTL.numItems;
     Err err;
@@ -210,6 +210,7 @@ static void Load(Boolean older)
             gTL.scroll = gTL.items[gTL.focus].y;
     }
     DrawList();
+    return err;
 }
 
 static void ScrollBy(Int16 delta)
@@ -234,6 +235,38 @@ static Int16 ItemAt(Coord ly)
     return -1;
 }
 
+/* Load a view just pushed with TLSetView. If that fails (e.g. "Nothing
+ * found") go back: the list still holds the previous view's posts. */
+static void LoadPushed(void)
+{
+    gTL.needsLoad = false;
+    SetTitleTrigger();
+    ShowBack(FrmGetActiveForm());
+    if (Load(false) != errNone && TLBack()) {
+        gTL.needsLoad = false;
+        SetTitleTrigger();
+        ShowBack(FrmGetActiveForm());
+        DrawList();
+    }
+}
+
+/* Open a profile or hashtag. */
+static void ShowView(UInt8 kind, const char *target, const char *title)
+{
+    TLSetView(kind, target, title, true);  /* copies the strings before Load frees them */
+    LoadPushed();
+}
+
+static void Search(void)
+{
+    if (SearchRun())
+        LoadPushed();
+    else {
+        SetTitleTrigger();
+        DrawList();
+    }
+}
+
 static void OpenItem(Int16 i, Coord dx, Coord dy)
 {
     ItemType *it;
@@ -251,13 +284,14 @@ static void OpenItem(Int16 i, Coord dx, Coord dy)
         FrmPopupForm(ViewerForm);
         return;
     }
-    if (it->f[fKind][0] == 'N') {
-        if (it->f[fAcctId][0]) {
-            TLSetView(kindUser, it->f[fAcctId], it->f[fName], true);
-            Load(false);
-            ShowBack(FrmGetActiveForm());
-            SetTitleTrigger();
-        }
+    if (it->f[fKind][0] == 'N') {  /* follow notification, account search result */
+        if (it->f[fAcctId][0])
+            ShowView(kindUser, it->f[fAcctId], it->f[fName]);
+        return;
+    }
+    if (it->f[fKind][0] == 'T') {  /* hashtag search result */
+        if (it->f[fId][0])
+            ShowView(kindTag, it->f[fId], it->f[fName]);
         return;
     }
     gTL.selected = i;
@@ -341,6 +375,7 @@ static Boolean DoMenu(UInt16 id)
     case MenuNotifications: SwitchKind(kindNotif); return true;
     case MenuMentions:      SwitchKind(kindMentions); return true;
     case MenuBookmarks:     SwitchKind(kindBookmarks); return true;
+    case MenuSearch:        Search(); return true;
     case MenuReload:        Load(false); return true;
     case MenuTop:
         gTL.scroll = 0;
@@ -420,7 +455,11 @@ Boolean MainFormHandleEvent(EventType *e)
 
     case popSelectEvent:
         if (e->data.popSelect.controlID == MainKindTrigger) {
-            SwitchKind((UInt8)e->data.popSelect.selection);
+            if (e->data.popSelect.selection == kKindListSearch)
+                Search();
+            else if (e->data.popSelect.selection >= 0 &&
+                     e->data.popSelect.selection < kKindListSearch)
+                SwitchKind((UInt8)e->data.popSelect.selection);
             return true;
         }
         return false;

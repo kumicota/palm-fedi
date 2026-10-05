@@ -24,5 +24,7 @@ typedef struct FormType *FormPtr; typedef struct EventType EventType;
 #define StrCompare strcmp
 #define MemMove memmove
 #define MemSet(p, n, v) memset((p), (v), (n))
+#define MemPtrNew malloc
+#define MemPtrFree free
 #define StrIToA(s, n) sprintf((s), "%ld", (long)(n))
 #endif

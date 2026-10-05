@@ -5,6 +5,14 @@
 
 #define kListMaxLines   10
 #define kGap            2
+#define kPollRowGap     3
+#define kPollBox        7
+
+/* Tap targets of the poll from the last renderFull pass, relative to the
+ * item's top-left (only set while the poll can be voted on). */
+static ItemType *gPollItem = NULL;
+static Int16 gPollRowTop[kMaxPollOptions + 1];
+static Int16 gPollVoteTop, gPollVoteBottom, gPollVoteRight;
 
 static IndexedColorType Gray(void)
 {
@@ -88,6 +96,153 @@ static void MediaGeometry(Coord w, UInt16 flags, Coord *size, UInt16 *perRow)
     }
 }
 
+Boolean RenderPollCanVote(const ItemType *item)
+{
+    return item->pollParts && !ProtoPollHas(item, 'V') && !ProtoPollHas(item, 'X') &&
+           !ProtoHasFlag(item, 'M');  /* servers don't let you vote in your own poll */
+}
+
+/* Split "*42:Title" into own-vote mark, percentage (-1 = hidden) and title. */
+static const char *PollOption(const char *opt, Boolean *own, Int16 *pct)
+{
+    const char *p = opt;
+    *own = (*p == '*');
+    *pct = -1;
+    if (*p)
+        p++;
+    if (*p >= '0' && *p <= '9') {
+        *pct = 0;
+        while (*p >= '0' && *p <= '9')
+            *pct = *pct * 10 + (*p++ - '0');
+        if (*pct > 100)
+            *pct = 100;
+    }
+    while (*p && *p != ':')
+        p++;
+    return *p ? p + 1 : p;
+}
+
+/* Poll: results with bars once you voted (or it closed), otherwise tick
+ * boxes; in the detail view also a Vote button. Returns the height used. */
+static Coord DrawPoll(ItemType *item, Coord x, Coord y, const PointType *origin, Coord w,
+                      UInt16 flags, IndexedColorType gray)
+{
+    Boolean draw = (flags & renderDraw) != 0;
+    Boolean full = (flags & renderFull) != 0;
+    Boolean vote = RenderPollCanVote(item);
+    Boolean multi = ProtoPollHas(item, 'M');
+    UInt16 i, n = ProtoPollOptions(item);
+    Coord cy = y, lh = FntLineHeight(), top = origin->y;
+    const char *summary;
+
+    if (full && vote)
+        gPollItem = item;
+    for (i = 0; i < n; i++) {
+        Boolean own;
+        Int16 pct;
+        const char *title = PollOption(ProtoPollPart(item, pollFirstOption + i), &own, &pct);
+        UInt16 len = StrLen(title);
+
+        if (full)
+            gPollRowTop[i] = cy - top;
+        if (!vote) {
+            char label[6];
+            Coord lw = 0, h = lh;
+            label[0] = 0;
+            if (pct >= 0) {
+                StrIToA(label, pct);
+                StrCat(label, "%");
+            }
+            FntSetFont(own ? boldFont : stdFont);
+            lw = FntCharsWidth(label, StrLen(label));
+            if (draw) {
+                WinSetTextColor(own ? Accent() : UIColorGetTableEntryIndex(UIObjectForeground));
+                DrawRight(label, x + w, cy);
+            }
+            if (full)
+                h = Wrap(title, x, cy, w - lw - 4, 0, draw, NULL);
+            else if (draw)
+                WinDrawTruncChars(title, len, x, cy, w - lw - 4);
+            if (!h)
+                h = lh;
+            cy += h;
+            if (draw && pct > 0) {
+                RectangleType bar;
+                RctSetRectangle(&bar, x, cy, (Coord)(((Int32)w * pct) / 100), 2);
+                if (!bar.extent.x)
+                    bar.extent.x = 1;
+                WinSetForeColor(own ? Accent() : gray);
+                WinDrawRectangle(&bar, 0);
+            }
+            FntSetFont(stdFont);
+        } else {
+            Coord h = lh, tx = x + kPollBox + 4;
+            if (draw) {
+                RectangleType box;
+                RctSetRectangle(&box, x + 1, cy + (lh - kPollBox) / 2, kPollBox, kPollBox);
+                WinSetForeColor(UIColorGetTableEntryIndex(UIObjectForeground));
+                WinDrawRectangleFrame(multi ? simpleFrame : roundFrame, &box);
+                if (full && (item->pollSel & (1UL << i))) {
+                    RctInsetRectangle(&box, 2);
+                    WinDrawRectangle(&box, multi ? 0 : 2);
+                }
+                WinSetTextColor(UIColorGetTableEntryIndex(UIObjectForeground));
+            }
+            if (full)
+                h = Wrap(title, tx, cy, x + w - tx, 0, draw, NULL);
+            else if (draw)
+                WinDrawTruncChars(title, len, tx, cy, x + w - tx);
+            if (!h)
+                h = lh;
+            cy += h;
+        }
+        cy += kPollRowGap;
+    }
+    if (full)
+        gPollRowTop[n] = cy - top;
+
+    summary = ProtoPollPart(item, pollSummary);
+    if (draw) {
+        WinSetTextColor(gray);
+        WinDrawTruncChars(summary, StrLen(summary), x, cy, w);
+    }
+    cy += lh;
+
+    if (full && vote) {
+        const char *label = multi ? "Vote (pick any)" : "Vote";
+        RectangleType b;
+        UInt16 len = StrLen(label);
+        FntSetFont(boldFont);
+        RctSetRectangle(&b, x + 1, cy + 3, FntCharsWidth(label, len) + 14, lh + 1);
+        if (draw) {
+            WinSetForeColor(Accent());
+            WinSetTextColor(Accent());
+            WinDrawRectangleFrame(roundFrame, &b);
+            WinDrawChars(label, len, b.topLeft.x + 7, b.topLeft.y);
+        }
+        FntSetFont(stdFont);
+        gPollVoteTop = cy - top;
+        gPollVoteBottom = b.topLeft.y + b.extent.y + 2 - top;
+        gPollVoteRight = b.topLeft.x + b.extent.x + 2 - origin->x;
+        cy = b.topLeft.y + b.extent.y + 2;
+    }
+    return cy - y;
+}
+
+Int16 RenderPollHit(ItemType *item, Coord dx, Coord dy)
+{
+    UInt16 i, n;
+    if (item != gPollItem || !RenderPollCanVote(item))
+        return -1;
+    if (dy >= gPollVoteTop && dy < gPollVoteBottom && dx < gPollVoteRight)
+        return pollHitVote;
+    n = ProtoPollOptions(item);
+    for (i = 0; i < n; i++)
+        if (dy >= gPollRowTop[i] && dy < gPollRowTop[i + 1])
+            return i;
+    return -1;
+}
+
 static Boolean MediaHidden(const ItemType *item, UInt16 flags)
 {
     return !(flags & renderFull) && ProtoHasFlag(item, 'S');
@@ -113,6 +268,10 @@ Int16 RenderItem(ItemType *item, Coord x, Coord y, Coord w, UInt16 flags,
     IndexedColorType gray = Gray();
     char buf[48];
     Boolean failed, truncated;
+    char kind = item->f[fKind][0];
+
+    if (full && gPollItem == item)
+        gPollItem = NULL;  /* set again below if the poll is still open */
 
     if (draw) {
         WinPushDrawState();
@@ -130,7 +289,7 @@ Int16 RenderItem(ItemType *item, Coord x, Coord y, Coord w, UInt16 flags,
     lh = FntLineHeight();
     if (item->f[fContext][0]) {
         if (draw) {
-            WinSetTextColor(item->f[fKind][0] == 'N' ? Accent() : gray);
+            WinSetTextColor(kind == 'N' || kind == 'P' ? Accent() : gray);
             WinDrawTruncChars(item->f[fContext], StrLen(item->f[fContext]), left, cy, avail);
         }
         cy += lh;
@@ -170,14 +329,16 @@ Int16 RenderItem(ItemType *item, Coord x, Coord y, Coord w, UInt16 flags,
         cy += FntLineHeight();
     }
     FntSetFont(stdFont);
-    if (draw) {
-        buf[0] = '@';
-        StrNCopyZ(buf + 1, item->f[fAcct], sizeof(buf) - 1);
-        StrNCatZ(buf, VisLabel(item), sizeof(buf));
-        WinSetTextColor(gray);
-        WinDrawTruncChars(buf, StrLen(buf), tx, cy, left + avail - tx);
+    if (item->f[fAcct][0]) {  /* hashtags have none */
+        if (draw) {
+            buf[0] = '@';
+            StrNCopyZ(buf + 1, item->f[fAcct], sizeof(buf) - 1);
+            StrNCatZ(buf, VisLabel(item), sizeof(buf));
+            WinSetTextColor(gray);
+            WinDrawTruncChars(buf, StrLen(buf), tx, cy, left + avail - tx);
+        }
+        cy += lh;
     }
-    cy += lh;
     if (avatars && cy < avatarTop + kAvatarStd + 1)
         cy = avatarTop + kAvatarStd + 1;
     cy += 1;
@@ -214,6 +375,13 @@ Int16 RenderItem(ItemType *item, Coord x, Coord y, Coord w, UInt16 flags,
                 WinDrawChars("more...", 7, left, cy);
             }
             cy += lh;
+        }
+        if (item->pollParts) {
+            PointType origin;
+            origin.x = x;
+            origin.y = y;
+            cy += 3;
+            cy += DrawPoll(item, left, cy, &origin, avail, flags, gray);
         }
     }
 
@@ -279,7 +447,7 @@ Int16 RenderItem(ItemType *item, Coord x, Coord y, Coord w, UInt16 flags,
     }
 
     /* footer: counts */
-    if (item->f[fKind][0] == 'S') {
+    if (kind == 'S') {
         char *p = item->counts;
         static const char *labels[3] = { "re ", "boost ", "fav " };
         static const char marks[3] = { 0, 'B', 'F' };

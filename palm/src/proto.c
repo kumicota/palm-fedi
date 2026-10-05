@@ -88,6 +88,63 @@ void ProtoFillItem(ItemType *item, char *record, UInt8 page)
             *p++ = 0;
         item->mediaAlt[n++] = start;
     }
+
+    ProtoSetPoll(item, item->f[fPoll]);
+}
+
+void ProtoSetPoll(ItemType *item, char *field)
+{
+    UInt16 n = 1;
+    char *p = field;
+
+    item->poll = NULL;
+    item->pollParts = 0;
+    item->pollSel = 0;
+    if (!field || !*field)
+        return;
+    for (; *p; p++) {
+        if (*p == chGS) {
+            *p = 0;
+            if (n == pollFirstOption + kMaxPollOptions)
+                break;  /* ignore options we can't vote for */
+            n++;
+        }
+    }
+    if (n > pollFirstOption) {
+        item->poll = field;
+        item->pollParts = (UInt8)n;
+    }
+}
+
+const char *ProtoPollPart(const ItemType *item, UInt16 part)
+{
+    const char *p = item->poll;
+    UInt16 i;
+
+    if (!p || part >= item->pollParts)
+        return gEmpty;
+    for (i = 0; i < part; i++)
+        p += StrLen(p) + 1;
+    return p;
+}
+
+UInt16 ProtoPollOptions(const ItemType *item)
+{
+    return item->pollParts ? item->pollParts - pollFirstOption : 0;
+}
+
+Boolean ProtoPollHas(const ItemType *item, char flag)
+{
+    return item->pollParts && StrChr(ProtoPollPart(item, pollFlags), flag) != NULL;
+}
+
+void ProtoFreeItem(ItemType *item)
+{
+    if (item->pollOwned && item->poll)
+        MemPtrFree(item->poll);
+    item->poll = NULL;
+    item->pollParts = 0;
+    item->pollOwned = false;
 }
 
 Boolean ProtoHasFlag(const ItemType *item, char flag)

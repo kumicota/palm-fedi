@@ -18,7 +18,7 @@ int main(void)
         "N\x1f\x1f" "Carol\x1f" "carol\x1f" "1h\x1f" "bio\x1f\x1f" "Carol followed you";
     char *buf = malloc(sizeof(body));
     char *rec[8], *head[4];
-    ItemType a, b;
+    ItemType a, b, c;
     UInt16 n;
     char url[80];
 
@@ -52,6 +52,48 @@ int main(void)
     url[0] = 0;
     UrlAdd(url, 12, "text", "abcdefghijk");   /* truncates safely */
     assert(strlen(url) < 12);
+
+    /* poll field: id, flags, summary, options ("*" = own vote) */
+    {
+        static char pollRec[] =
+            "S\x1f" "7\x1f" "Al\x1f" "al\x1f" "1m\x1f" "Tea?\x1f\x1f\x1f\x1f" "0 0 0\x1f\x1f\x1f\x1f"
+            "p\x1f\x1f" "9\x1f" "p1\x1d" "MV\x1d" "4 people\x1d" "-25:Tea\x1d" "*75:Coffee: black";
+        char *r = malloc(sizeof(pollRec)), *owned;
+        memcpy(r, pollRec, sizeof(pollRec));
+        ProtoFillItem(&c, r, 0);
+        assert(c.pollParts == 5 && ProtoPollOptions(&c) == 2);
+        assert(!strcmp(ProtoPollPart(&c, pollId), "p1"));
+        assert(ProtoPollHas(&c, 'M') && ProtoPollHas(&c, 'V') && !ProtoPollHas(&c, 'X'));
+        assert(!strcmp(ProtoPollPart(&c, pollSummary), "4 people"));
+        assert(!strcmp(ProtoPollPart(&c, pollFirstOption + 1), "*75:Coffee: black"));
+        assert(!strcmp(ProtoPollPart(&c, 9), ""));
+        assert(!strcmp(c.f[fAcctId], "9"));
+
+        /* after voting the item owns its poll */
+        owned = malloc(32);
+        strcpy(owned, "p1\x1dX\x1d" "closed\x1d" "*100:Tea");
+        ProtoFreeItem(&c);
+        ProtoSetPoll(&c, owned);
+        c.pollOwned = true;
+        assert(ProtoPollOptions(&c) == 1 && ProtoPollHas(&c, 'X'));
+        ProtoFreeItem(&c);
+        assert(!c.poll && !c.pollParts && !c.pollOwned);
+
+        {   /* more options than we can vote for: the rest is ignored */
+            char many[200];
+            int i;
+            strcpy(many, "p2\x1d\x1dsum");
+            for (i = 0; i < kMaxPollOptions + 5; i++)
+                strcat(many, "\x1d-1:o");
+            ProtoSetPoll(&c, many);
+            assert(ProtoPollOptions(&c) == kMaxPollOptions);
+            assert(!strcmp(ProtoPollPart(&c, pollFirstOption + kMaxPollOptions - 1), "-1:o"));
+        }
+        ProtoSetPoll(&c, NULL);
+        assert(c.pollParts == 0 && ProtoPollOptions(&c) == 0);
+        assert(a.pollParts == 0 && !strcmp(ProtoPollPart(&a, 0), ""));
+        free(r);
+    }
 
     free(buf);
     puts("proto tests passed");

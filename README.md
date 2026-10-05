@@ -32,6 +32,13 @@ sent as RGB565 bitmaps that the Palm just copies into memory and draws. See
 * Home, Local, Federated, Notifications, Mentions and Bookmarks timelines
 * Thread view (with the opened post highlighted) and author profile timelines
 * Post detail with reply, boost, favourite, bookmark and copy text
+* **Polls:** results with bars, or tick the options and vote in the post view
+* **Follow / unfollow:** profiles start with a header (bio, fields, counts,
+  "Follows you"); open it for the Follow / Unfollow button, or use
+  *Post → Follow / Unfollow* on any post
+* **Search** (*View → Search*, or "Search..." in the timeline picker): people,
+  hashtags and posts; `@user@host` or a post URL finds remote ones, and
+  `#tag` opens that hashtag's timeline
 * Compose and reply with content warning and visibility (public, unlisted,
   followers, direct); your mentions are pre-filled on replies
 * **Images:** thumbnails in the list, larger previews in the detail view, and a
@@ -46,6 +53,9 @@ sent as RGB565 bitmaps that the Palm just copies into memory and draws. See
 
 **Gateway**
 * Pure Python 3 standard library + Pillow, one process, SQLite for state
+* Optional: `ffmpeg` on the PATH gives video previews (Akkoma doesn't make
+  them) and decodes images your Pillow can't (e.g. AVIF on older Pillow);
+  `pip install ".[formats]"` adds AVIF/HEIC support through Pillow plugins
 * Two ways to log in: a **web page** (OAuth in a desktop browser, then type a
   10-letter device key on the Palm), or **username/password on the Palm**
   (Akkoma and Pleroma only; Mastodon doesn't allow the password grant)
@@ -68,7 +78,7 @@ palmfedi-gateway --port 8080          # or: python -m palmfedi_gateway
 or with Docker:
 
 ```sh
-docker build -t palmfedi-gateway gateway
+docker build -t palmfedi-gateway gateway        # add --build-arg WITH_FFMPEG=1 for video previews
 docker run -d -p 8080:8080 -v palmfedi:/data palmfedi-gateway
 ```
 
