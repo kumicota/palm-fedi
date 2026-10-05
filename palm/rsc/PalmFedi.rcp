@@ -1,0 +1,229 @@
+/* PalmFedi resources (PilRC). Layout is for the 160x160 standard screen;
+ * the forms re-layout themselves when the Dynamic Input Area is collapsed
+ * (160x225) or the LifeDrive is rotated (240x160). */
+#include "../src/PalmFediRsc.h"
+
+VERSION 1 "1.0"
+APPLICATIONICONNAME ID 1000 "PalmFedi"
+
+ICON ID AppIconFamily
+BEGIN
+    BITMAP "icon-1.bmp"   BPP 1
+    BITMAP "icon-8.bmp"   BPP 8 TRANSPARENT 255 0 255
+    BITMAP "icon-8hd.bmp" BPP 8 TRANSPARENT 255 0 255 DENSITY 144
+END
+
+SMALLICON ID AppSmallIconFamily
+BEGIN
+    BITMAP "sicon-1.bmp"   BPP 1
+    BITMAP "sicon-8.bmp"   BPP 8 TRANSPARENT 255 0 255
+    BITMAP "sicon-8hd.bmp" BPP 8 TRANSPARENT 255 0 255 DENSITY 144
+END
+
+/* ---------------------------------------------------------------- Main -- */
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+MENUID MainMenuBar
+BEGIN
+    TITLE "PalmFedi"
+    POPUPTRIGGER "Notifications" ID MainKindTrigger AT (RIGHT@159 1 AUTO AUTO) RIGHTANCHOR
+    LIST "Home" "Local" "Federated" "Notifications" "Mentions" "Bookmarks"
+        ID MainKindList AT (88 1 70 AUTO) NONUSABLE VISIBLEITEMS 6
+    POPUPLIST ID MainKindTrigger MainKindList
+    GADGET ID MainGadget AT (0 15 152 130)
+    SCROLLBAR ID MainScroll AT (153 15 7 130) VALUE 0 MIN 0 MAX 0 PAGESIZE 100
+    BUTTON "New" ID MainNewButton AT (1 147 26 12)
+    BUTTON "Reload" ID MainReloadButton AT (PREVRIGHT+5 PREVTOP 34 12)
+    BUTTON "Older" ID MainOlderButton AT (PREVRIGHT+5 PREVTOP 30 12)
+    BUTTON "Back" ID MainBackButton AT (130 147 28 12) NONUSABLE
+END
+
+MENU ID MainMenuBar
+BEGIN
+    PULLDOWN "View"
+    BEGIN
+        MENUITEM "Home"          ID MenuHome          "H"
+        MENUITEM "Local"         ID MenuLocal         "L"
+        MENUITEM "Federated"     ID MenuFederated     "F"
+        MENUITEM "Notifications" ID MenuNotifications "N"
+        MENUITEM "Mentions"      ID MenuMentions      "M"
+        MENUITEM "Bookmarks"     ID MenuBookmarks     "B"
+        MENUITEM SEPARATOR
+        MENUITEM "Reload"        ID MenuReload        "R"
+        MENUITEM "Go to top"     ID MenuTop           "T"
+    END
+    PULLDOWN "Options"
+    BEGIN
+        MENUITEM "Preferences..." ID MenuPrefs "P"
+        MENUITEM "Log in..."      ID MenuLogin
+        MENUITEM SEPARATOR
+        MENUITEM "About PalmFedi" ID MenuAbout
+    END
+END
+
+/* -------------------------------------------------------------- Detail -- */
+FORM ID DetailForm AT (0 0 160 160)
+NOFRAME
+MENUID DetailMenuBar
+BEGIN
+    TITLE "Post"
+    GADGET ID DetailGadget AT (0 15 152 130)
+    SCROLLBAR ID DetailScroll AT (153 15 7 130) VALUE 0 MIN 0 MAX 0 PAGESIZE 100
+    BUTTON "Done" ID DetailDoneButton AT (1 147 27 12)
+    BUTTON "Reply" ID DetailReplyButton AT (PREVRIGHT+3 PREVTOP 28 12)
+    PUSHBUTTON "Boost" ID DetailBoostPush AT (PREVRIGHT+3 PREVTOP 28 12)
+    PUSHBUTTON "Fav" ID DetailFavPush AT (PREVRIGHT+3 PREVTOP 22 12)
+    BUTTON "Thread" ID DetailThreadButton AT (PREVRIGHT+3 PREVTOP 34 12)
+END
+
+MENU ID DetailMenuBar
+BEGIN
+    PULLDOWN "Post"
+    BEGIN
+        MENUITEM "Bookmark / Unbookmark" ID MenuDetailBookmark "K"
+        MENUITEM "Author's posts"        ID MenuDetailProfile  "U"
+        MENUITEM "View media"            ID MenuDetailImages   "I"
+        MENUITEM "Copy text"             ID MenuDetailCopy     "C"
+    END
+END
+
+/* ------------------------------------------------------------- Compose -- */
+FORM ID ComposeForm AT (0 0 160 160)
+NOFRAME
+MENUID ComposeMenuBar
+BEGIN
+    TITLE "New post"
+    LABEL "CW:" ID ComposeCWLabel AT (1 17) FONT 1
+    FIELD ID ComposeCWField AT (22 17 136 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 120
+    FIELD ID ComposeTextField AT (1 33 150 110) EDITABLE UNDERLINED MULTIPLELINES
+        HASSCROLLBAR MAXCHARS 4000 AUTOSHIFT
+    SCROLLBAR ID ComposeTextScroll AT (153 33 7 110) VALUE 0 MIN 0 MAX 0 PAGESIZE 10
+    BUTTON "Post" ID ComposePostButton AT (1 147 26 12)
+    BUTTON "Cancel" ID ComposeCancelButton AT (PREVRIGHT+5 PREVTOP 34 12)
+    POPUPTRIGGER "Followers" ID ComposeVisTrigger AT (PREVRIGHT+6 PREVTOP AUTO AUTO) LEFTANCHOR
+    LIST "Public" "Unlisted" "Followers" "Direct" ID ComposeVisList
+        AT (70 110 50 AUTO) NONUSABLE VISIBLEITEMS 4
+    POPUPLIST ID ComposeVisTrigger ComposeVisList
+    LABEL "    0" ID ComposeCountLabel AT (136 148)
+END
+
+MENU ID ComposeMenuBar
+BEGIN
+    PULLDOWN "Edit"
+    BEGIN
+        MENUITEM "Undo"       ID MenuEditUndo      "U"
+        MENUITEM "Cut"        ID MenuEditCut       "X"
+        MENUITEM "Copy"       ID MenuEditCopy      "C"
+        MENUITEM "Paste"      ID MenuEditPaste     "P"
+        MENUITEM "Select All" ID MenuEditSelectAll "S"
+        MENUITEM SEPARATOR
+        MENUITEM "Keyboard"   ID MenuEditKeyboard  "K"
+        MENUITEM "Graffiti 2 Help" ID MenuEditGraffiti "G"
+    END
+END
+
+/* --------------------------------------------------------------- Prefs -- */
+FORM ID PrefsForm AT (2 2 156 156)
+MODAL
+SAVEBEHIND
+DEFAULTBTNID PrefsCancelButton
+BEGIN
+    TITLE "Preferences"
+    LABEL "Gateway:" AUTOID AT (4 18) FONT 1
+    FIELD ID PrefsHostField AT (52 18 100 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 63
+    LABEL "Port:" AUTOID AT (4 32) FONT 1
+    FIELD ID PrefsPortField AT (52 32 34 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 5 NUMERIC
+    LABEL "Key:" AUTOID AT (4 46) FONT 1
+    FIELD ID PrefsKeyField AT (52 46 60 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 15 AUTOSHIFT
+    BUTTON "Log in" ID PrefsLoginButton AT (116 45 36 12)
+    CHECKBOX "Load images" ID PrefsImagesCheck AT (4 62 AUTO AUTO)
+    CHECKBOX "Show avatars" ID PrefsAvatarsCheck AT (4 75 AUTO AUTO)
+    LABEL "Image colors:" AUTOID AT (4 90)
+    POPUPTRIGGER "16-bit" ID PrefsDepthTrigger AT (70 90 AUTO AUTO) LEFTANCHOR
+    LIST "16-bit (best)" "8-bit (less RAM)" ID PrefsDepthList AT (70 90 80 AUTO)
+        NONUSABLE VISIBLEITEMS 2
+    POPUPLIST ID PrefsDepthTrigger PrefsDepthList
+    LABEL "Text size:" AUTOID AT (4 103)
+    POPUPTRIGGER "Normal" ID PrefsFontTrigger AT (70 103 AUTO AUTO) LEFTANCHOR
+    LIST "Normal" "Large" ID PrefsFontList AT (70 103 50 AUTO) NONUSABLE VISIBLEITEMS 2
+    POPUPLIST ID PrefsFontTrigger PrefsFontList
+    LABEL "Get a key at http://<gateway>/" AUTOID AT (4 118)
+    BUTTON "OK" ID PrefsOKButton AT (4 139 36 12)
+    BUTTON "Cancel" ID PrefsCancelButton AT (PREVRIGHT+5 PREVTOP 36 12)
+    BUTTON "Test" ID PrefsTestButton AT (PREVRIGHT+5 PREVTOP 36 12)
+    GRAFFITISTATEINDICATOR AT (140 141)
+END
+
+/* --------------------------------------------------------------- Login -- */
+FORM ID LoginForm AT (2 30 156 128)
+MODAL
+SAVEBEHIND
+DEFAULTBTNID LoginCancelButton
+BEGIN
+    TITLE "Log in"
+    LABEL "Instance:" AUTOID AT (4 18) FONT 1
+    FIELD ID LoginInstanceField AT (56 18 96 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 63
+    LABEL "User:" AUTOID AT (4 33) FONT 1
+    FIELD ID LoginUserField AT (56 33 96 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 47
+    LABEL "Password:" AUTOID AT (4 48) FONT 1
+    FIELD ID LoginPassField AT (56 48 96 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 127
+    LABEL "Works with Akkoma/Pleroma." AUTOID AT (4 66)
+    LABEL "The password is sent to your" AUTOID AT (4 77)
+    LABEL "gateway, then forgotten." AUTOID AT (4 88)
+    BUTTON "Log in" ID LoginOKButton AT (4 110 40 12)
+    BUTTON "Cancel" ID LoginCancelButton AT (PREVRIGHT+5 PREVTOP 40 12)
+    GRAFFITISTATEINDICATOR AT (140 112)
+END
+
+/* -------------------------------------------------------------- Viewer -- */
+FORM ID ViewerForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Image"
+    GADGET ID ViewerGadget AT (0 15 152 130)
+    SCROLLBAR ID ViewerScroll AT (153 15 7 130) VALUE 0 MIN 0 MAX 0 PAGESIZE 100
+    BUTTON "Done" ID ViewerDoneButton AT (1 147 30 12)
+    BUTTON "\003" ID ViewerPrevButton AT (110 147 22 12) FONT 3
+    BUTTON "\004" ID ViewerNextButton AT (136 147 22 12) FONT 3
+END
+
+/* -------------------------------------------------------------- Alerts -- */
+ALERT ID ErrorAlert
+ERROR
+BEGIN
+    TITLE "PalmFedi"
+    MESSAGE "^1^2^3"
+    BUTTONS "OK"
+END
+
+ALERT ID InfoAlert
+INFORMATION
+BEGIN
+    TITLE "PalmFedi"
+    MESSAGE "^1^2^3"
+    BUTTONS "OK"
+END
+
+ALERT ID AboutAlert
+INFORMATION
+BEGIN
+    TITLE "About PalmFedi"
+    MESSAGE "PalmFedi 1.0\nAkkoma / fediverse client for Palm OS 5.\n\nNeeds the PalmFedi gateway running on a computer you trust."
+    BUTTONS "OK"
+END
+
+ALERT ID ConfirmDiscardAlert
+CONFIRMATION
+BEGIN
+    TITLE "Discard post?"
+    MESSAGE "Your post has not been sent. Discard it?"
+    BUTTONS "Discard" "Keep editing"
+END
+
+ALERT ID RomIncompatibleAlert
+ERROR
+BEGIN
+    TITLE "PalmFedi"
+    MESSAGE "PalmFedi needs Palm OS 5 or later."
+    BUTTONS "OK"
+END
