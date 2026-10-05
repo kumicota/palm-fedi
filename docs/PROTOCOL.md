@@ -1,4 +1,4 @@
-# Palm ⇄ Gateway wire protocol (v1)
+# Palm ⇄ Gateway wire protocol (v2)
 
 The Palm talks to the gateway over **plain HTTP/1.0** (Palm OS 5 cannot do
 modern TLS). The gateway talks HTTPS + the Mastodon/Akkoma API upstream.
@@ -26,7 +26,8 @@ body    := record (RS record)*
 US = 0x1F   RS = 0x1E   GS = 0x1D (list separator inside a field)
 ```
 
-No field ever contains US, RS or GS (the gateway strips them).
+No field ever contains US or RS, and only list fields (media, alts, poll)
+contain GS, as their separator; the gateway strips them from all text.
 
 The **first record is always a header**:
 
@@ -39,19 +40,19 @@ The gateway also keeps every response under the byte budget `b` the client
 asks for (default 30000) by truncating long posts and dropping trailing
 items, so the client can hold it in a single `MemPtrNew` chunk.
 
-### Item record (timeline / notifications / thread / user)
+### Item record (timeline / notifications / thread / user / search)
 
 | # | field     | notes                                                             |
 |---|-----------|-------------------------------------------------------------------|
-| 0 | kind      | `S` status, `N` notification without status (e.g. follow)        |
-| 1 | status id | empty for `N`                                                     |
+| 0 | kind      | `S` status, `N` notification without status (e.g. follow) or account search result, `P` profile header (v2), `T` hashtag (v2) |
+| 1 | status id | empty for `N` and `P`; the tag name (without `#`) for `T`        |
 | 2 | name      | author display name                                               |
 | 3 | acct      | `user@host` (or `user` for local)                                 |
 | 4 | time      | short relative time: `now`, `5m`, `3h`, `2d`, `Mar 3`             |
 | 5 | text      | plain text body (HTML flattened, links shown as their text)       |
 | 6 | cw        | content warning / subject, empty if none                          |
 | 7 | context   | e.g. `Bob boosted`, `Bob favourited your post`, `Bob followed you`|
-| 8 | flags     | any of `F` favourited `B` boosted `K` bookmarked `S` sensitive media `R` is a reply `M` mine |
+| 8 | flags     | any of `F` favourited `B` boosted `K` bookmarked `S` sensitive media `R` is a reply `M` mine; for `P` the relationship flags below |
 | 9 | counts    | `replies boosts favs` (space separated)                           |
 |10 | media     | GS-separated `T:key` entries, T = `I` image, `V` video, `A` audio, `U` other |
 |11 | alts      | GS-separated alt texts, same order as media                       |
@@ -59,8 +60,38 @@ items, so the client can hold it in a single `MemPtrNew` chunk.
 |13 | vis       | `p` public, `u` unlisted, `k` followers-only, `d` direct          |
 |14 | mentions  | reply prefix, e.g. `@alice@x.y @bob ` (excludes yourself)         |
 |15 | acct id   | author account id (for the profile timeline)                      |
+|16 | poll      | v2: GS list, see below; empty if the post has no poll             |
 
 Clients must ignore extra trailing fields (forward compatibility).
+
+### Protocol version
+
+`/p/tl` takes `v` (default 1). With `v=2` the gateway sends the poll field
+instead of appending the options to the text, puts a `P` profile item at the
+top of the first page of a `user` timeline, and includes `T` hashtag items in
+search results. v1 clients keep working unchanged.
+
+### Poll field
+
+```
+poll    := id GS flags GS summary (GS option)*
+option  := mark pct ":" title
+```
+
+* `flags`: any of `M` multiple choice, `V` you voted, `X` closed.
+* `summary`: ready to show, e.g. `12 votes · 2d left`, `3 people · closed`.
+* `mark`: `*` if you voted for this option, `-` otherwise.
+* `pct`: 0–100 share of the votes (of the voters for multiple choice), or
+  empty when the server hides the totals until the poll closes.
+
+The Palm shows tick boxes while it can still vote (not `V`, not `X`, not your
+own post), otherwise results with bars.
+
+### Relationship flags
+
+Returned by `/p/rel` and `/p/follow`, and in the flags of a `P` item:
+`W` you follow them, `Q` follow requested (locked account), `Y` they follow
+you, `M` it's your own account.
 
 ## Endpoints
 
@@ -75,10 +106,19 @@ as `k=` (query string or form body).
 | GET    | `/p/tl`     | `k`, `t`, `max`, `id`, `n`, `b`           | next cursor, focus index       |
 | POST   | `/p/act`    | `k`, `id`, `a`                            | flags, counts                  |
 | POST   | `/p/post`   | `k`, `text`, `cw`, `vis`, `reply`         | new status id                  |
+| POST   | `/p/vote`   | `k`, `id` (poll id), `c` (e.g. `0,2`)     | poll field (updated results)   |
+| GET    | `/p/rel`    | `k`, `id` (account id)                    | relationship flags             |
+| POST   | `/p/follow` | `k`, `id` (account id), `a`               | relationship flags             |
 | GET    | `/p/img`    | `k`, `m`, `w`, `h`, `bpp`, `fit`, `d`     | *(binary, see below)*          |
 
 `t` (timeline kind): `home`, `local`, `public`, `notif`, `thread` (needs
-`id` = status id), `user` (needs `id` = account id), `bookmarks`, `mentions`.
+`id` = status id), `user` (needs `id` = account id), `bookmarks`, `mentions`,
+`tag` (needs `id` = hashtag, without `#`), `search` (needs `id` or `q` = the
+search text; accounts, then hashtags, then posts; `resolve=true` so a
+`@user@host` or post URL is looked up on its server; no paging).
+
+`/p/follow` `a`: `follow` or `unfollow` (unfollow also cancels a pending
+request).
 
 `max` is the opaque cursor returned in the previous page's header (empty = newest).
 For `thread`, the focus index is the 0-based index of the requested status
@@ -112,6 +152,12 @@ offset size  field
 exactly `w`×`h` (used for square thumbnails), `fit=fit` (default) keeps the
 aspect ratio. `d=1` asks for a low-density (72) image, used by
 devices without a high-density screen. Errors are returned as a normal `ERR` record response.
+
+If the preview can't be decoded the gateway tries the original (and vice
+versa). Video and audio files aren't downloaded; with `ffmpeg` installed the
+gateway grabs a frame instead (Akkoma's `preview_url` for a video is the
+video itself). Media that can't be decoded are remembered for an hour, so
+the Palm asking again doesn't trigger another download.
 
 On the device the image is streamed into a column of strip bitmaps of at most
 ~30 KB each, so large images never need one big allocation.

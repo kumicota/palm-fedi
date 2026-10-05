@@ -48,7 +48,8 @@ sudo palmdev-prep -d sdk-5r3
 make -C palm          # produces palm/PalmFedi.prc
 ```
 
-Creator ID is `PFdi`. The code is about 26 KB, in a single code segment.
+Creator ID is `PFdi`. The code is about 31 KB, in a single code segment (68k code segments top out
+at 32 KB, so the next big feature needs a second segment or some trimming).
 
 ## Icons
 

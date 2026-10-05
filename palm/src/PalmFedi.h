@@ -11,7 +11,7 @@
 #define appCreator          'PFdi'
 #define appPrefID           0
 #define appPrefVersion      2
-#define appVersionStr       "1.0"
+#define appVersionStr       "1.1"
 
 /* -------------------------------------------------------------------------
  * Preferences
@@ -52,9 +52,18 @@ extern PrefsType gPrefs;
 #define fVis       13
 #define fMentions  14
 #define fAcctId    15
-#define kNumFields 16
+#define fPoll      16
+#define kNumFields 17
 
-#define kMaxMedia  4
+#define kProtoVersion   2        /* sent as v= so the gateway sends polls etc. */
+#define kMaxMedia       4
+#define kMaxPollOptions 20
+
+/* poll parts (ProtoPollPart): id, flags, summary, then the options */
+#define pollId      0
+#define pollFlags   1
+#define pollSummary 2
+#define pollFirstOption 3
 
 typedef struct {
     char   *f[kNumFields];       /* point into the page buffer (NUL terminated) */
@@ -69,6 +78,10 @@ typedef struct {
     Int16   thumbY;              /* offset of the thumbnail row, -1 = none */
     UInt8   page;                /* index of the buffer holding the strings */
     Boolean showBody;            /* CW expanded */
+    UInt8   pollParts;           /* 0 = no poll, else 3 + number of options */
+    Boolean pollOwned;           /* poll is our own MemPtr (updated after voting) */
+    char   *poll;                /* NUL separated poll parts */
+    UInt32  pollSel;             /* options ticked in the detail view (bit mask) */
 } ItemType;
 
 /* Split a response buffer in place. Returns number of records found. */
@@ -77,6 +90,13 @@ UInt16  ProtoFields(char *record, char **fields, UInt16 maxFields);
 void    ProtoFillItem(ItemType *item, char *record, UInt8 page);
 Boolean ProtoHasFlag(const ItemType *item, char flag);
 void    ProtoSetFlag(ItemType *item, char flag, Boolean on);
+/* Attach a poll field ("id" GS "flags" GS "summary" GS options...); splits
+ * it in place. Options look like "*42:Title" (* = your vote, - = not). */
+void    ProtoSetPoll(ItemType *item, char *field);
+const char *ProtoPollPart(const ItemType *item, UInt16 part);
+UInt16  ProtoPollOptions(const ItemType *item);
+Boolean ProtoPollHas(const ItemType *item, char flag);
+void    ProtoFreeItem(ItemType *item);  /* frees what the item owns, not the page */
 
 /* -------------------------------------------------------------------------
  * Networking (net.c)
@@ -134,11 +154,13 @@ void    ThumbFlush(void);
  * Timeline model (timeline.c)
  * ---------------------------------------------------------------------- */
 enum { kindHome, kindLocal, kindPublic, kindNotif, kindMentions, kindBookmarks,
-       kindThread, kindUser, kindCount };
+       kindThread, kindUser, kindSearch, kindTag, kindCount };
+
+#define kKindListSearch  6       /* "Search..." entry of the timeline popup */
 
 typedef struct {
     UInt8   kind;
-    char    target[32];          /* status id (thread) or account id (user) */
+    char    target[64];          /* status id, account id, search text or hashtag */
     char    title[32];
 } ViewType;
 
@@ -186,6 +208,11 @@ const char *TLKindName(UInt8 kind);
 Int16   RenderItem(ItemType *item, Coord x, Coord y, Coord w, UInt16 flags,
                    const RectangleType *clip);
 Int16   RenderMediaHit(ItemType *item, Coord w, UInt16 flags, Coord dx, Coord dy);
+/* Poll option under (dx, dy) in the last renderFull drawing of item:
+ * the option index, pollHitVote for the Vote button, or -1. */
+#define pollHitVote  -2
+Int16   RenderPollHit(ItemType *item, Coord dx, Coord dy);
+Boolean RenderPollCanVote(const ItemType *item);
 Boolean RenderFetchOne(ItemType *item, Coord w, UInt16 flags);
 void    RenderMessage(const RectangleType *r, const char *msg);
 
@@ -198,6 +225,15 @@ Boolean ComposeFormHandleEvent(EventType *e);
 Boolean ViewerFormHandleEvent(EventType *e);
 Boolean PrefsRun(void);          /* modal; returns true if saved */
 Boolean LoginRun(void);
+Boolean SearchRun(void);         /* modal; true if gTL now shows the results */
+
+/* Accounts (account.c) */
+const char *AcctRelLabel(const char *flags);
+const char *AcctFollowLabel(const char *flags);
+/* Ask, then follow or unfollow. flags (W/Q/Y/M, see PROTOCOL.md) are
+ * fetched first unless known; they are updated on success. */
+Boolean AcctFollowToggle(const char *acctId, const char *name, char *flags, UInt16 size,
+                         Boolean known);
 Boolean MainIdle(void);          /* returns true if more idle work pending */
 Boolean DetailIdle(void);
 

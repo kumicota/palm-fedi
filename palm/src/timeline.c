@@ -6,11 +6,12 @@
 TimelineType gTL;
 
 static const char *kKindParam[kindCount] = {
-    "home", "local", "public", "notif", "mentions", "bookmarks", "thread", "user"
+    "home", "local", "public", "notif", "mentions", "bookmarks", "thread", "user",
+    "search", "tag"
 };
 static const char *kKindName[kindCount] = {
     "Home", "Local", "Federated", "Notifications", "Mentions", "Bookmarks",
-    "Thread", "Posts"
+    "Thread", "Posts", "Search", "Hashtag"
 };
 
 const char *TLKindName(UInt8 kind)
@@ -31,7 +32,9 @@ Boolean TLInit(void)
 
 void TLClear(void)
 {
-    UInt8 i;
+    UInt16 i;
+    for (i = 0; i < gTL.numItems; i++)
+        ProtoFreeItem(&gTL.items[i]);
     for (i = 0; i < gTL.numPages; i++)
         MemPtrFree(gTL.pages[i]);
     gTL.numPages = 0;
@@ -61,6 +64,7 @@ static void DropFirstPage(void)
         if (gTL.items[i].page == 0) {
             if (gTL.items[i].height > 0)
                 removedHeight += gTL.items[i].height;
+            ProtoFreeItem(&gTL.items[i]);
             continue;
         }
         gTL.items[keep] = gTL.items[i];
@@ -81,7 +85,7 @@ static void DropFirstPage(void)
 
 Err TLLoad(Boolean older)
 {
-    char url[200];
+    char url[320];
     char *buf, *records[41], *head[4];
     UInt32 len;
     UInt16 n, i;
@@ -101,6 +105,7 @@ Err TLLoad(Boolean older)
         UrlAdd(url, sizeof(url), "max", gTL.cursor);
     UrlAddInt(url, sizeof(url), "n", 20);
     UrlAddInt(url, sizeof(url), "b", 30000);
+    UrlAddInt(url, sizeof(url), "v", kProtoVersion);
 
     err = HttpFetch("GET", url, NULL, &buf, &len);
     if (err)

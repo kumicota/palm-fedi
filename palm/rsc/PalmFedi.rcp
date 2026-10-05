@@ -3,7 +3,7 @@
  * (160x225) or the LifeDrive is rotated (240x160). */
 #include "../src/PalmFediRsc.h"
 
-VERSION 1 "1.0"
+VERSION 1 "1.1"
 APPLICATIONICONNAME ID 1000 "PalmFedi"
 
 ICON ID AppIconFamily
@@ -27,8 +27,8 @@ MENUID MainMenuBar
 BEGIN
     TITLE "PalmFedi"
     POPUPTRIGGER "Notifications" ID MainKindTrigger AT (RIGHT@159 1 AUTO AUTO) RIGHTANCHOR
-    LIST "Home" "Local" "Federated" "Notifications" "Mentions" "Bookmarks"
-        ID MainKindList AT (88 1 70 AUTO) NONUSABLE VISIBLEITEMS 6
+    LIST "Home" "Local" "Federated" "Notifications" "Mentions" "Bookmarks" "Search..."
+        ID MainKindList AT (88 1 70 AUTO) NONUSABLE VISIBLEITEMS 7
     POPUPLIST ID MainKindTrigger MainKindList
     GADGET ID MainGadget AT (0 15 152 130)
     SCROLLBAR ID MainScroll AT (153 15 7 130) VALUE 0 MIN 0 MAX 0 PAGESIZE 100
@@ -48,6 +48,7 @@ BEGIN
         MENUITEM "Notifications" ID MenuNotifications "N"
         MENUITEM "Mentions"      ID MenuMentions      "M"
         MENUITEM "Bookmarks"     ID MenuBookmarks     "B"
+        MENUITEM "Search..."     ID MenuSearch        "S"
         MENUITEM SEPARATOR
         MENUITEM "Reload"        ID MenuReload        "R"
         MENUITEM "Go to top"     ID MenuTop           "T"
@@ -74,6 +75,7 @@ BEGIN
     PUSHBUTTON "Boost" ID DetailBoostPush AT (PREVRIGHT+3 PREVTOP 28 12)
     PUSHBUTTON "Fav" ID DetailFavPush AT (PREVRIGHT+3 PREVTOP 22 12)
     BUTTON "Thread" ID DetailThreadButton AT (PREVRIGHT+3 PREVTOP 34 12)
+    BUTTON "Follow back" ID DetailFollowButton AT (31 147 52 12) NONUSABLE
 END
 
 MENU ID DetailMenuBar
@@ -82,6 +84,7 @@ BEGIN
     BEGIN
         MENUITEM "Bookmark / Unbookmark" ID MenuDetailBookmark "K"
         MENUITEM "Author's posts"        ID MenuDetailProfile  "U"
+        MENUITEM "Follow / Unfollow"     ID MenuDetailFollow   "F"
         MENUITEM "View media"            ID MenuDetailImages   "I"
         MENUITEM "Copy text"             ID MenuDetailCopy     "C"
     END
@@ -175,6 +178,21 @@ BEGIN
     GRAFFITISTATEINDICATOR AT (140 112)
 END
 
+/* -------------------------------------------------------------- Search -- */
+FORM ID SearchForm AT (2 70 156 70)
+MODAL
+SAVEBEHIND
+DEFAULTBTNID SearchCancelButton
+BEGIN
+    TITLE "Search"
+    FIELD ID SearchField AT (4 18 148 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 63
+    LABEL "Names, @user@host, posts, a URL;" AUTOID AT (4 32)
+    LABEL "#tag opens that hashtag." AUTOID AT (4 43)
+    BUTTON "Search" ID SearchOKButton AT (4 55 40 12)
+    BUTTON "Cancel" ID SearchCancelButton AT (PREVRIGHT+5 PREVTOP 40 12)
+    GRAFFITISTATEINDICATOR AT (140 57)
+END
+
 /* -------------------------------------------------------------- Viewer -- */
 FORM ID ViewerForm AT (0 0 160 160)
 NOFRAME
@@ -208,7 +226,7 @@ ALERT ID AboutAlert
 INFORMATION
 BEGIN
     TITLE "About PalmFedi"
-    MESSAGE "PalmFedi 1.0\nAkkoma / fediverse client for Palm OS 5.\n\nNeeds the PalmFedi gateway running on a computer you trust."
+    MESSAGE "PalmFedi 1.1\nAkkoma / fediverse client for Palm OS 5.\n\nNeeds the PalmFedi gateway running on a computer you trust."
     BUTTONS "OK"
 END
 
@@ -218,6 +236,14 @@ BEGIN
     TITLE "Discard post?"
     MESSAGE "Your post has not been sent. Discard it?"
     BUTTONS "Discard" "Keep editing"
+END
+
+ALERT ID ConfirmAlert
+CONFIRMATION
+BEGIN
+    TITLE "PalmFedi"
+    MESSAGE "^1^2^3"
+    BUTTONS "OK" "Cancel"
 END
 
 ALERT ID RomIncompatibleAlert

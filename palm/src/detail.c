@@ -7,6 +7,7 @@
 
 static Int16 gScroll = 0, gHeight = 0;
 static Boolean gIdleDone = true;
+static char gRelFlags[8];   /* relationship with the post's author, if fetched */
 
 static ItemType *Current(void)
 {
@@ -58,10 +59,16 @@ static Boolean GadgetHandler(FormGadgetTypeInCallback *gadgetP, UInt16 cmd, void
     return false;
 }
 
+static Boolean IsProfile(const ItemType *it)
+{
+    return it && it->f[fKind][0] == 'P';
+}
+
 static void SyncButtons(FormPtr frm)
 {
     ItemType *it = Current();
     Boolean isStatus = it && it->f[fKind][0] == 'S';
+    UInt16 follow = FrmGetObjectIndex(frm, DetailFollowButton);
     UInt16 ids[4] = { DetailReplyButton, DetailBoostPush, DetailFavPush, DetailThreadButton };
     UInt16 i;
 
@@ -76,6 +83,12 @@ static void SyncButtons(FormPtr frm)
         CtlSetValue((ControlPtr)GetObjectPtr(DetailBoostPush), ProtoHasFlag(it, 'B'));
         CtlSetValue((ControlPtr)GetObjectPtr(DetailFavPush), ProtoHasFlag(it, 'F'));
     }
+    if (IsProfile(it) && !ProtoHasFlag(it, 'M')) {
+        FrmHideObject(frm, follow);  /* the label may get shorter */
+        CtlSetLabel((ControlPtr)FrmGetObjectPtr(frm, follow), AcctFollowLabel(it->flags));
+        FrmShowObject(frm, follow);
+    } else
+        FrmHideObject(frm, follow);
 }
 
 static void LayoutForm(FormPtr frm, Coord W, Coord H)
@@ -90,9 +103,91 @@ static void LayoutForm(FormPtr frm, Coord W, Coord H)
     SizeObject(frm, DetailScroll, W - kScrollW, kTitleH, kScrollW, H - kTitleH - kButtonsH);
     for (i = 0; i < 5; i++) {
         MoveObject(frm, ids[i], x, by);
+        if (i == 1)  /* profiles show Follow where posts have Reply */
+            MoveObject(frm, DetailFollowButton, x, by);
         FrmGetObjectBounds(frm, FrmGetObjectIndex(frm, ids[i]), &r);
         x += r.extent.x + (W > 160 ? 8 : 3);
     }
+}
+
+/* Follow / unfollow the profile shown, or the author of the post. */
+static void Follow(void)
+{
+    ItemType *it = Current();
+    if (!it || !it->f[fAcctId][0])
+        return;
+    if (IsProfile(it)) {
+        if (AcctFollowToggle(it->f[fAcctId], it->f[fName], it->flags, sizeof(it->flags), true)) {
+            it->f[fContext] = (char *)AcctRelLabel(it->flags);
+            it->height = -1;
+            SyncButtons(FrmGetActiveForm());
+            Draw();
+        }
+    } else if (AcctFollowToggle(it->f[fAcctId], it->f[fName], gRelFlags, sizeof(gRelFlags),
+                                false)) {
+        const char *label = AcctRelLabel(gRelFlags);
+        ShowInfo(label[0] ? label : "Unfollowed.");
+    }
+}
+
+/* Tick a poll option (single choice: replaces the previous one). */
+static void PickOption(UInt16 i)
+{
+    ItemType *it = Current();
+    if (!it)
+        return;
+    if (ProtoPollHas(it, 'M'))
+        it->pollSel ^= 1UL << i;
+    else
+        it->pollSel = 1UL << i;
+    Draw();
+}
+
+static void Vote(void)
+{
+    ItemType *it = Current();
+    char body[200], choices[64], num[6], *buf, *rec[1], *f[2], *copy;
+    UInt16 i, n;
+    UInt32 len;
+
+    if (!it || !it->pollParts)
+        return;
+    if (!it->pollSel) {
+        ShowError("Tap an option first.");
+        return;
+    }
+    choices[0] = 0;
+    n = ProtoPollOptions(it);
+    for (i = 0; i < n; i++) {
+        if (!(it->pollSel & (1UL << i)))
+            continue;
+        if (choices[0])
+            StrCat(choices, ",");
+        StrIToA(num, i);
+        StrCat(choices, num);
+    }
+    body[0] = 0;
+    UrlAdd(body, sizeof(body), "k", gPrefs.key);
+    UrlAdd(body, sizeof(body), "id", ProtoPollPart(it, pollId));
+    UrlAdd(body, sizeof(body), "c", choices);
+    if (HttpFetch("POST", "/p/vote", body, &buf, &len) != errNone) {
+        ShowError(NetLastError());
+        return;
+    }
+    ProtoSplit(buf, len, rec, 1);
+    ProtoFields(rec[0], f, 2);
+    copy = (char *)MemPtrNew(StrLen(f[1]) + 1);
+    if (copy) {  /* the new results replace the poll from the page */
+        StrCopy(copy, f[1]);
+        ProtoFreeItem(it);
+        ProtoSetPoll(it, copy);
+        it->pollOwned = (it->poll == copy);
+        if (!it->pollOwned)
+            MemPtrFree(copy);
+    }
+    MemPtrFree(buf);
+    it->height = -1;
+    Draw();
 }
 
 /* fav / unfav / boost / unboost / bm / unbm */
@@ -164,9 +259,13 @@ static Boolean PenDown(EventType *e)
             SysTaskDelay(1);
     }
     if (!dragged) {
-        Int16 m = RenderMediaHit(it, r.extent.x, renderFull, x - r.topLeft.x,
-                                 y - r.topLeft.y + gScroll);
-        if (m >= 0)
+        Coord dx = x - r.topLeft.x, dy = y - r.topLeft.y + gScroll;
+        Int16 p = RenderPollHit(it, dx, dy), m;
+        if (p == pollHitVote)
+            Vote();
+        else if (p >= 0)
+            PickOption(p);
+        else if ((m = RenderMediaHit(it, r.extent.x, renderFull, dx, dy)) >= 0)
             OpenMedia(m);
     } else
         gIdleDone = false;
@@ -225,6 +324,7 @@ Boolean DetailFormHandleEvent(EventType *e)
         DiaResizeForm(frm, &r);
         LayoutForm(frm, r.extent.x, r.extent.y);
         FrmSetGadgetHandler(frm, FrmGetObjectIndex(frm, DetailGadget), GadgetHandler);
+        FrmSetTitle(frm, IsProfile(it) ? "Profile" : "Post");
         SyncButtons(frm);
         if (it && !it->showBody) {
             it->showBody = true;  /* stays expanded in the list too */
@@ -274,6 +374,9 @@ Boolean DetailFormHandleEvent(EventType *e)
             if (it)
                 GoTimeline(kindThread, it->f[fId], "Thread");
             return true;
+        case DetailFollowButton:
+            Follow();
+            return true;
         }
         return false;
 
@@ -301,6 +404,9 @@ Boolean DetailFormHandleEvent(EventType *e)
         case MenuDetailProfile:
             if (it && it->f[fAcctId][0])
                 GoTimeline(kindUser, it->f[fAcctId], it->f[fName]);
+            return true;
+        case MenuDetailFollow:
+            Follow();
             return true;
         case MenuDetailCopy:
             if (it)

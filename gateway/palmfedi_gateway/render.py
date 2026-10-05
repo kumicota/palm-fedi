@@ -192,13 +192,42 @@ def short_time(iso: str | None, now: datetime | None = None) -> str:
     return label
 
 
+def time_left(iso: str | None, now: datetime | None = None) -> str:
+    """Time until *iso*: ``5m``, ``3h``, ``2d``; empty if it has passed."""
+    if not iso:
+        return ""
+    try:
+        t = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    secs = int((t - (now or datetime.now(timezone.utc))).total_seconds())
+    if secs <= 0:
+        return ""
+    if secs < 3600:
+        return f"{max(1, secs // 60)}m"
+    if secs < 86400:
+        return f"{secs // 3600}h"
+    return f"{secs // 86400}d"
+
+
 def clean_field(s: str | None) -> str:
     """palm_text + strip framing characters (defence in depth)."""
     return palm_text(s).replace(US, " ").replace(RS, " ").replace(GS, " ")
 
 
+def _field(f) -> str:
+    if f is None:
+        return ""
+    if isinstance(f, (list, tuple)):
+        # list fields (media keys, alt texts, poll parts): GS between entries
+        return GS.join(clean_field(str(x)) for x in f)
+    return clean_field(str(f))
+
+
 def record(fields) -> str:
-    return US.join(clean_field(str(f)) if f is not None else "" for f in fields)
+    return US.join(_field(f) for f in fields)
 
 
 def encode_body(records: list[list]) -> bytes:

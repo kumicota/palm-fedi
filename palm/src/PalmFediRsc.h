@@ -22,6 +22,7 @@
 #define DetailBoostPush        1105
 #define DetailFavPush          1106
 #define DetailThreadButton     1107
+#define DetailFollowButton     1108
 
 /* ---- Compose form ------------------------------------------------------ */
 #define ComposeForm            1200
@@ -67,6 +68,12 @@
 #define ViewerPrevButton       1504
 #define ViewerNextButton       1505
 
+/* ---- Search form (modal) ----------------------------------------------- */
+#define SearchForm             1600
+#define SearchField            1601
+#define SearchOKButton         1602
+#define SearchCancelButton     1603
+
 /* ---- Menus ------------------------------------------------------------- */
 #define MainMenuBar            1000
 #define DetailMenuBar          1100
@@ -79,6 +86,7 @@
 #define MenuBookmarks          1005
 #define MenuReload             1006
 #define MenuTop                1007
+#define MenuSearch             1008
 #define MenuPrefs              1010
 #define MenuLogin              1011
 #define MenuAbout              1012
@@ -86,6 +94,7 @@
 #define MenuDetailProfile      1101
 #define MenuDetailCopy         1102
 #define MenuDetailImages       1103
+#define MenuDetailFollow       1104
 #define MenuEditUndo           10000
 #define MenuEditCut            10001
 #define MenuEditCopy           10002
@@ -101,6 +110,7 @@
 #define ConfirmDiscardAlert    2003
 #define NoNetAlert             2004
 #define RomIncompatibleAlert   2005
+#define ConfirmAlert           2006
 
 #define AppIconFamily          1000
 #define AppSmallIconFamily     1001

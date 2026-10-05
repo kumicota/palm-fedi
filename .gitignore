@@ -8,3 +8,4 @@ palm/build/
 palm/PalmFedi.prc
 palm/tests/test_proto
 palm/tests/url_helpers.c
+gateway/build/

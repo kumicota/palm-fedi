@@ -36,10 +36,13 @@ pagination cursor always points just past the last item actually sent.
 main.c       PilotMain, event loop (idle-time image loading via nilEvents)
 mainform.c   timeline list: gadget + scrollbar, offscreen double buffer,
              drag-to-scroll, 5-way, auto paging, DIA re-layout
-detail.c     single post: full text, 2-column media, alt text, actions
+detail.c     single post: full text, 2-column media, alt text, actions,
+             poll voting, profile follow button
 compose.c    new post / reply: CW, visibility, character count, Edit menu
 viewer.c     full-screen image viewer (popup form), alt text, prev/next
 prefs.c      preferences + password login dialogs
+search.c     search dialog (results are an ordinary timeline view)
+account.c    follow / unfollow (relationship flags, confirmation)
 timeline.c   model: pages of records, history stack (Back), paging
 render.c     one routine that measures *and* draws a post (so hit-testing
              and scrolling always match the screen)
@@ -87,7 +90,13 @@ util.c       field helpers, DIA (PINS) support, 5-way key mapping
 ```
 
 * Tap a post to open the detail view, or tap a thumbnail to open the image
-  viewer. Tap a follow notification to see that account's posts.
+  viewer. Tap a follow notification (or an account in search results) to see
+  that account's posts; the profile item at the top opens the profile with a
+  Follow / Unfollow button. Tap a hashtag result for its timeline.
+* Polls show tick boxes (round for single choice) until you vote; in the
+  detail view tap options, then **Vote**. Afterwards they show percentages
+  and bars, your choices in bold. The vote reply carries the new results,
+  which the item keeps in its own small buffer (the page stays read-only).
 * Content warnings show `CW: …` plus `[tap to read]`. Sensitive media appear
   as `[2 sensitive media]` until opened.
 * In a thread, the post you opened from has a blue bar and is scrolled into view.
@@ -128,7 +137,7 @@ palmfedi_gateway/
 ## Possible next steps
 
 * Image attachments from the Palm (photos from the LifeDrive's drive via VFS)
-* Polls (voting), emoji reactions (Akkoma), follow/unfollow, search
+* Emoji reactions (Akkoma), paging through search results
 * Local caching of the last timeline in a PDB for offline reading
 * A `fediverse://` exchange-manager hook so other apps can share text
 * Notifications polling with the Attention Manager

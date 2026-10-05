@@ -20,7 +20,7 @@ LIBS     = -lPalmOSGlue
 
 SRCS = src/main.c src/mainform.c src/detail.c src/compose.c src/viewer.c \
        src/prefs.c src/timeline.c src/render.c src/image.c src/net.c \
-       src/proto.c src/util.c
+       src/proto.c src/util.c src/account.c src/search.c
 OBJS = $(SRCS:src/%.c=build/%.o)
 
 all: $(APP).prc

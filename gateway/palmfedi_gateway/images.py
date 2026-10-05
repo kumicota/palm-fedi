@@ -3,11 +3,32 @@
 from __future__ import annotations
 
 import io
+import logging
+import shutil
 import struct
+import subprocess
 import threading
 from collections import OrderedDict
 
 from PIL import Image, ImageChops, ImageOps
+
+log = logging.getLogger("palmfedi")
+
+# Optional decoders for formats older Pillow builds can't read (AVIF, HEIC).
+try:
+    import pillow_avif  # noqa: F401  (registers itself)
+except ImportError:
+    pass
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    if hasattr(pillow_heif, "register_avif_opener"):
+        pillow_heif.register_avif_opener()
+except Exception:
+    pass
+
+FFMPEG = shutil.which("ffmpeg")
+FFMPEG_TIMEOUT = 30
 
 MAGIC = b"PFI1"
 DENSITY_DOUBLE = 144
@@ -30,10 +51,62 @@ _PALETTE_IMAGE = Image.new("P", (1, 1))
 _PALETTE_IMAGE.putpalette([c for rgb in palette() for c in rgb])
 
 
+class ImageError(Exception):
+    """The data isn't an image we can decode."""
+
+
+def _ffmpeg_frame(source: str, data: bytes | None = None) -> bytes:
+    """First video frame (or the picture itself) as PNG, via ffmpeg.
+
+    *source* is ``"pipe:0"`` (decode *data*) or an http(s) URL, which lets
+    ffmpeg fetch only what it needs from a large video.
+    """
+    if not FFMPEG:
+        raise ImageError("no ffmpeg")
+    cmd = [FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error",
+           "-protocol_whitelist", "pipe,http,https,tcp,tls,crypto",
+           "-i", source, "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]
+    try:
+        res = subprocess.run(cmd, input=data, capture_output=True, timeout=FFMPEG_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ImageError(f"ffmpeg failed: {e}") from None
+    if res.returncode != 0 or not res.stdout:
+        raise ImageError("ffmpeg: " + res.stderr.decode("utf-8", "replace").strip()[-200:])
+    return res.stdout
+
+
+def video_frame(url: str) -> bytes:
+    """Preview frame of a remote video, as PNG (needs ffmpeg)."""
+    return _ffmpeg_frame(url)
+
+
+def _open(data: bytes) -> Image.Image:
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.seek(0)  # first frame of animations
+        img.load()
+        return img
+    except Image.DecompressionBombError:
+        raise ImageError("image too large") from None
+    except Exception as e:  # UnidentifiedImageError, truncated files, codec errors
+        if not FFMPEG:
+            raise ImageError(str(e) or e.__class__.__name__) from None
+    # Pillow can't read it (e.g. AVIF/HEIC on an older Pillow, or a video
+    # served as a "preview"): let ffmpeg turn it into a PNG.
+    try:
+        return Image.open(io.BytesIO(_ffmpeg_frame("pipe:0", data)))
+    except ImageError:
+        raise
+    except Exception as e:
+        raise ImageError(str(e)) from None
+
+
 def _load(data: bytes) -> Image.Image:
-    img = Image.open(io.BytesIO(data))
-    img.seek(0)  # first frame of animations
-    img = ImageOps.exif_transpose(img)
+    img = _open(data)
+    try:
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass  # broken EXIF; keep the image as is
     if img.mode in ("RGBA", "LA", "P", "PA"):
         img = img.convert("RGBA")
         bg = Image.new("RGB", img.size, (255, 255, 255))
@@ -78,7 +151,13 @@ def encode(img: Image.Image, bpp: int, density: int = DENSITY_DOUBLE) -> bytes:
 
 def transcode(data: bytes, w: int, h: int, bpp: int = 16, crop: bool = False,
               density: int = DENSITY_DOUBLE) -> bytes:
-    return encode(_resize(_load(data), w, h, crop), bpp, density)
+    """Decode *data* and return a PFI1 image; raises ImageError if it can't."""
+    try:
+        return encode(_resize(_load(data), w, h, crop), bpp, density)
+    except ImageError:
+        raise
+    except Exception as e:
+        raise ImageError(str(e) or e.__class__.__name__) from None
 
 
 class ByteLRU:

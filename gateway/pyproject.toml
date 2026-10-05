@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "palmfedi-gateway"
-version = "1.0.0"
+version = "1.1.0"
 description = "Gateway that lets Palm OS 5 devices use Akkoma / Mastodon-API servers"
 requires-python = ">=3.9"
 dependencies = ["Pillow>=9.1"]
 
 [project.optional-dependencies]
 test = ["pytest"]
+formats = ["pillow-heif", "pillow-avif-plugin"]  # HEIC, and AVIF for Pillow < 11.2
 
 [project.scripts]
 palmfedi-gateway = "palmfedi_gateway.__main__:main"
