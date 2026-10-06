@@ -48,8 +48,13 @@ sudo palmdev-prep -d sdk-5r3
 make -C palm          # produces palm/PalmFedi.prc
 ```
 
-Creator ID is `PFdi`. The code is about 31 KB, in a single code segment (68k code segments top out
-at 32 KB, so the next big feature needs a second segment or some trimming).
+Creator ID is `PFdi`. 68k code segments top out at 32 KB, so the app has two:
+the main one (~26 KB: event loop, list, post view, drawing, networking) and
+`dialogs` (~8 KB: preferences, login, compose, search, image viewer,
+follow). `PalmFedi.def` declares them; functions marked `SEG_DIALOGS` go in
+the second, and `m68k-palmos-multigen` generates the glue the Makefile links
+in. Put new rarely-used code there too; `m68k-palmos-objdump -h
+build/PalmFedi` shows how full each segment is.
 
 ## Icons
 

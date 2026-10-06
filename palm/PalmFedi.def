@@ -1,0 +1,5 @@
+/* Application database description for build-prc. The second code segment
+ * holds the rarely used code (functions marked SEG_DIALOGS in the sources),
+ * because a 68k code segment can't exceed 32 KB. */
+application { "PalmFedi" PFdi }
+multiple code { "dialogs" }

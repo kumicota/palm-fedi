@@ -90,6 +90,8 @@
 #define MenuPrefs              1010
 #define MenuLogin              1011
 #define MenuAbout              1012
+#define MenuFreeMemory         1013
+#define MenuExit               1014
 #define MenuDetailBookmark     1100
 #define MenuDetailProfile      1101
 #define MenuDetailCopy         1102

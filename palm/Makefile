@@ -13,6 +13,7 @@ CC       = m68k-palmos-gcc
 PILRC    = pilrc
 BUILDPRC = build-prc
 OBJRES   = m68k-palmos-obj-res
+MULTIGEN = m68k-palmos-multigen
 
 CFLAGS   = -O2 -Wall -Wno-multichar -Wno-unused -palmos5r3 -Isrc
 LDFLAGS  = -palmos5r3
@@ -31,8 +32,16 @@ build:
 build/%.o: src/%.c src/PalmFedi.h src/PalmFediRsc.h | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/$(APP): $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
+# Two code segments (see PalmFedi.def): multigen writes the section stubs
+# and the linker script.
+build/$(APP)-sections.s build/$(APP)-sections.ld: $(APP).def | build
+	$(MULTIGEN) -b build/$(APP)-sections $(APP).def
+
+build/$(APP)-sections.o: build/$(APP)-sections.s
+	$(CC) -c $< -o $@
+
+build/$(APP): $(OBJS) build/$(APP)-sections.o build/$(APP)-sections.ld
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) build/$(APP)-sections.o build/$(APP)-sections.ld $(LIBS)
 
 build/rsc/stamp: rsc/PalmFedi.rcp src/PalmFediRsc.h $(wildcard rsc/*.bmp) | build
 	rm -f build/rsc/*.bin
@@ -40,7 +49,7 @@ build/rsc/stamp: rsc/PalmFedi.rcp src/PalmFediRsc.h $(wildcard rsc/*.bmp) | buil
 	touch $@
 
 $(APP).prc: build/$(APP) build/rsc/stamp
-	$(BUILDPRC) -o $@ -n "$(APP)" -c $(CREATOR) -t $(TYPE) build/$(APP) build/rsc/*.bin
+	$(BUILDPRC) -o $@ $(APP).def build/$(APP) build/rsc/*.bin
 
 clean:
 	rm -rf build $(APP).prc

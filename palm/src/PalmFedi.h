@@ -8,10 +8,18 @@
 #include <PalmOS.h>
 #include "PalmFediRsc.h"
 
+/* Code that is rarely run (dialogs, compose, viewer) lives in a second code
+ * segment: 68k code segments are limited to 32 KB. See PalmFedi.def. */
+#ifdef __palmos__
+#define SEG_DIALOGS __attribute__ ((section ("dialogs")))
+#else
+#define SEG_DIALOGS
+#endif
+
 #define appCreator          'PFdi'
 #define appPrefID           0
 #define appPrefVersion      2
-#define appVersionStr       "1.1"
+#define appVersionStr       "1.2"
 
 /* -------------------------------------------------------------------------
  * Preferences
@@ -111,7 +119,7 @@ typedef struct {
 } HttpConn;
 
 Err     NetStart(void);
-void    NetStop(void);
+void    NetStop(Boolean now);   /* now: drop the connection instead of lingering */
 Err     HttpOpen(HttpConn *c, const char *method, const char *path,
                  const char *body, UInt16 bodyLen);
 Int32   HttpRead(HttpConn *c, void *dst, Int32 n);   /* <0 on error */
@@ -136,6 +144,7 @@ typedef struct {
     UInt16  stripRows;           /* native rows per strip (even) */
     UInt16  numStrips;
     UInt16  density;             /* kDensityLow / kDensityDouble */
+    UInt32  bytes;               /* pixel memory, for the cache budget */
     BitmapType   *bmp[1];        /* numStrips entries, V3 wrappers if HD */
 } PfImage;
 
@@ -149,6 +158,8 @@ void    ImgDraw(PfImage *img, Coord x, Coord y, const RectangleType *clip);
 PfImage *ThumbGet(const char *key, UInt16 maxW, UInt16 maxH, Boolean crop,
                   Boolean fetch, Boolean *failed);
 void    ThumbFlush(void);
+void    ThumbTrim(UInt16 maxW);  /* drop cached images wider than maxW pixels */
+UInt32  ThumbBytes(void);
 
 /* -------------------------------------------------------------------------
  * Timeline model (timeline.c)
@@ -164,8 +175,8 @@ typedef struct {
     char    title[32];
 } ViewType;
 
-#define kMaxItems  120
-#define kMaxPages  8
+#define kMaxItems  100
+#define kMaxPages  6
 #define kMaxHistory 6
 
 typedef struct {
@@ -182,6 +193,7 @@ typedef struct {
     Int16   totalHeight;
     Int16   layoutWidth;
     Int16   selected;            /* item opened in the detail form */
+    Int16   hl;                  /* item highlighted by the 5-way, -1 if none */
     Boolean needsLoad;           /* reload when the main form opens */
 } TimelineType;
 
@@ -200,7 +212,8 @@ const char *TLKindName(UInt8 kind);
  * ---------------------------------------------------------------------- */
 #define renderDraw     0x01      /* actually draw (otherwise only measure) */
 #define renderFull     0x02      /* detail view: no line cap, big media */
-#define renderFocus    0x04      /* highlighted (thread focus) */
+#define renderFocus    0x04      /* thread focus (blue bar) */
+#define renderSelected 0x08      /* 5-way highlight (tinted, framed) */
 
 #define kThumbStd      36        /* list thumbnail size, standard coords */
 #define kAvatarStd     20
@@ -221,20 +234,21 @@ void    RenderMessage(const RectangleType *r, const char *msg);
  * ---------------------------------------------------------------------- */
 Boolean MainFormHandleEvent(EventType *e);
 Boolean DetailFormHandleEvent(EventType *e);
-Boolean ComposeFormHandleEvent(EventType *e);
-Boolean ViewerFormHandleEvent(EventType *e);
-Boolean PrefsRun(void);          /* modal; returns true if saved */
-Boolean LoginRun(void);
-Boolean SearchRun(void);         /* modal; true if gTL now shows the results */
+Boolean ComposeFormHandleEvent(EventType *e) SEG_DIALOGS;
+Boolean ViewerFormHandleEvent(EventType *e) SEG_DIALOGS;
+Boolean PrefsRun(void) SEG_DIALOGS;          /* modal; returns true if saved */
+Boolean LoginRun(void) SEG_DIALOGS;
+Boolean SearchRun(void) SEG_DIALOGS;         /* modal; true if gTL now shows the results */
 
 /* Accounts (account.c) */
-const char *AcctRelLabel(const char *flags);
-const char *AcctFollowLabel(const char *flags);
+const char *AcctRelLabel(const char *flags) SEG_DIALOGS;
+const char *AcctFollowLabel(const char *flags) SEG_DIALOGS;
 /* Ask, then follow or unfollow. flags (W/Q/Y/M, see PROTOCOL.md) are
  * fetched first unless known; they are updated on success. */
 Boolean AcctFollowToggle(const char *acctId, const char *name, char *flags, UInt16 size,
-                         Boolean known);
+                         Boolean known) SEG_DIALOGS;
 Boolean MainIdle(void);          /* returns true if more idle work pending */
+void    AppExit(void);           /* quit to the launcher, dropping the network */
 Boolean DetailIdle(void);
 
 /* compose parameters set before FrmGotoForm(ComposeForm) */

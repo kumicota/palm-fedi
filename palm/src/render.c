@@ -14,20 +14,44 @@ static ItemType *gPollItem = NULL;
 static Int16 gPollRowTop[kMaxPollOptions + 1];
 static Int16 gPollVoteTop, gPollVoteBottom, gPollVoteRight;
 
-static IndexedColorType Gray(void)
+/* Rows that can be seen while drawing (window coordinates); lines outside
+ * are measured but not drawn. */
+static Coord gClipTop = -32767, gClipBottom = 32767;
+
+/* Colour lookups are cached: WinRGBToIndex searches the whole palette. */
+static IndexedColorType gGray, gAccent, gTint;
+static Boolean gColorsReady = false;
+
+static IndexedColorType RGBIndex(UInt8 r, UInt8 g, UInt8 b)
 {
     RGBColorType rgb;
     rgb.index = 0;
-    rgb.r = rgb.g = rgb.b = 0x70;
+    rgb.r = r;
+    rgb.g = g;
+    rgb.b = b;
     return WinRGBToIndex(&rgb);
+}
+
+static void InitColors(void)
+{
+    if (gColorsReady)
+        return;
+    gGray = RGBIndex(0x70, 0x70, 0x70);
+    gAccent = RGBIndex(0x30, 0x40, 0xC0);   /* Akkoma-ish blue */
+    gTint = RGBIndex(0xDC, 0xE6, 0xFF);     /* 5-way highlight background */
+    gColorsReady = true;
+}
+
+static IndexedColorType Gray(void)
+{
+    InitColors();
+    return gGray;
 }
 
 static IndexedColorType Accent(void)
 {
-    RGBColorType rgb;
-    rgb.index = 0;
-    rgb.r = 0x30; rgb.g = 0x40; rgb.b = 0xC0;   /* Akkoma-ish blue */
-    return WinRGBToIndex(&rgb);
+    InitColors();
+    return gAccent;
 }
 
 static FontID BodyFont(void)
@@ -58,8 +82,11 @@ static Coord Wrap(const char *text, Coord x, Coord y, Coord w, UInt16 maxLines,
         shown = n;
         while (shown && (p[shown - 1] == '\n' || p[shown - 1] == ' '))
             shown--;
-        if (draw && shown)
-            WinDrawChars(p, shown, x, y + lines * lh);
+        if (draw && shown) {
+            Coord ly = y + lines * lh;
+            if (ly + lh > gClipTop && ly < gClipBottom)
+                WinDrawChars(p, shown, x, ly);
+        }
         lines++;
         p += n;
     }
@@ -273,9 +300,22 @@ Int16 RenderItem(ItemType *item, Coord x, Coord y, Coord w, UInt16 flags,
     if (full && gPollItem == item)
         gPollItem = NULL;  /* set again below if the poll is still open */
 
+    gClipTop = clip ? clip->topLeft.y : -32767;
+    gClipBottom = clip ? clip->topLeft.y + clip->extent.y : 32767;
     if (draw) {
         WinPushDrawState();
         WinSetTextColor(UIColorGetTableEntryIndex(UIObjectForeground));
+        if ((flags & renderSelected) && item->height > 3) {
+            /* tinted background (text cells use the back colour) + frame */
+            RectangleType sel;
+            RctSetRectangle(&sel, x, y, w, item->height - 1);
+            WinSetForeColor(Accent());
+            WinDrawRectangle(&sel, 0);
+            RctInsetRectangle(&sel, 1);
+            WinSetForeColor(gTint);
+            WinDrawRectangle(&sel, 0);
+            WinSetBackColor(gTint);
+        }
         if (flags & renderFocus) {
             RectangleType bar;
             RctSetRectangle(&bar, x, y, 2, item->height > 0 ? item->height : 20);

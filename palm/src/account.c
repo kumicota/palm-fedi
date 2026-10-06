@@ -2,6 +2,11 @@
  * W you follow them, Q follow requested, Y they follow you, M it's you. */
 #include "PalmFedi.h"
 
+/* This file is rarely used code: it lives in the second code segment
+ * (see PalmFedi.def). */
+static Boolean Has(const char *flags, char flag) SEG_DIALOGS;
+static Boolean Request(const char *method, const char *path, const char *body, char *flags, UInt16 size) SEG_DIALOGS;
+
 static Boolean Has(const char *flags, char flag)
 {
     return StrChr(flags, flag) != NULL;

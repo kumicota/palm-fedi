@@ -46,9 +46,14 @@ sent as RGB565 bitmaps that the Palm just copies into memory and draws. See
   high-density screen at full resolution. Video and audio show their preview frame.
 * Avatars (optional), content-warning folding, sensitive media hidden until opened
 * LifeDrive niceties: collapsible input area for a taller timeline (160×225),
-  landscape rotation, 5-way navigator (up/down scroll, center opens a post,
-  left goes back), drag-to-scroll with the stylus, "Older" paging and
-  automatic paging when you scroll past the end
+  landscape rotation, 5-way navigator (up/down moves a highlight from post to
+  post, paging through long posts; center opens the highlighted post; left
+  goes back), drag-to-scroll with the stylus, "Older" paging and automatic
+  paging when you move past the end
+* Light on memory: images are cached within a 200 KB budget, the post view's
+  big previews are freed when you leave it, and *Options → Free memory*
+  drops all cached images and shows how much of the heap is free.
+  *Options → Exit* quits to the launcher and turns the network off
 * 16-bit or 8-bit images (8-bit uses half the RAM), normal or large text
 
 **Gateway**
