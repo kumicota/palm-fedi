@@ -8,6 +8,8 @@
 
 static WinHandle gOff = NULL;          /* offscreen buffer for flicker-free scroll */
 static Coord gOffW = 0, gOffH = 0;
+static Int16 gOffScroll = 0;           /* scroll offset the buffer shows */
+static Boolean gOffValid = false;      /* buffer holds the current list */
 static char gTriggerLabel[32];
 static Boolean gIdleDone = true;
 
@@ -19,24 +21,29 @@ static void GetListBounds(RectangleType *r)
 
 static UInt16 ItemFlags(UInt16 i)
 {
-    return (gTL.focus == (Int16)i) ? renderFocus : 0;
+    return ((gTL.focus == (Int16)i) ? renderFocus : 0) |
+           ((gTL.hl == (Int16)i) ? renderSelected : 0);
 }
 
-/* Recompute heights and y positions (only dirty items are re-measured). */
-static void Layout(Coord w)
+/* Recompute heights and y positions (only dirty items are re-measured).
+ * Returns true if anything moved. */
+static Boolean Layout(Coord w)
 {
     UInt16 i;
     Int16 y = 0;
-    Boolean all = (w != gTL.layoutWidth);
+    Boolean all = (w != gTL.layoutWidth), changed = all;
     for (i = 0; i < gTL.numItems; i++) {
         ItemType *it = &gTL.items[i];
-        if (all || it->height < 0)
+        if (all || it->height < 0) {
             it->height = RenderItem(it, 0, 0, w, ItemFlags(i), NULL);
+            changed = true;
+        }
         it->y = y;
         y += it->height;
     }
     gTL.totalHeight = y;
     gTL.layoutWidth = w;
+    return changed;
 }
 
 static void ClampScroll(Coord viewH)
@@ -65,28 +72,65 @@ static void FreeOffscreen(void)
         WinDeleteWindow(gOff, false);
     gOff = NULL;
     gOffW = gOffH = 0;
+    gOffValid = false;
 }
 
-static void DrawItems(Coord ox, Coord oy, Coord w, Coord h)
+/* Draw the items that overlap area (draw-window coordinates, also the clip);
+ * the top-left of the list view is at (ox, oy). */
+static void DrawItems(Coord ox, Coord oy, Coord w, const RectangleType *area)
 {
-    RectangleType clip;
     UInt16 i;
-    RctSetRectangle(&clip, ox, oy, w, h);
-    WinEraseRectangle(&clip, 0);
+    Int16 from = area->topLeft.y - oy, to = from + area->extent.y;
+    WinSetClip(area);
+    WinEraseRectangle(area, 0);
     for (i = 0; i < gTL.numItems; i++) {
         ItemType *it = &gTL.items[i];
         Int16 top = it->y - gTL.scroll;
-        if (top + it->height <= 0)
+        if (top + it->height <= from)
             continue;
-        if (top >= h)
+        if (top >= to)
             break;
-        RenderItem(it, ox, oy + top, w, renderDraw | ItemFlags(i), &clip);
+        RenderItem(it, ox, oy + top, w, renderDraw | ItemFlags(i), area);
+    }
+    WinResetClip();
+}
+
+/* Redraw view rows [top, top + h) and put them on screen. */
+static void Repaint(Int16 top, Int16 h)
+{
+    RectangleType r, area;
+
+    GetListBounds(&r);
+    if (top < 0) {
+        h += top;
+        top = 0;
+    }
+    if (top + h > r.extent.y)
+        h = r.extent.y - top;
+    if (h <= 0 || !gTL.numItems)
+        return;
+    if (gOff && gOffValid) {
+        WinHandle old = WinSetDrawWindow(gOff);
+        RctSetRectangle(&area, 0, top, r.extent.x, h);
+        DrawItems(0, 0, r.extent.x, &area);
+        WinSetDrawWindow(old);
+        WinCopyRectangle(gOff, NULL, &area, r.topLeft.x, r.topLeft.y + top, winPaint);
+    } else {
+        RctSetRectangle(&area, r.topLeft.x, r.topLeft.y + top, r.extent.x, h);
+        DrawItems(r.topLeft.x, r.topLeft.y, r.extent.x, &area);
     }
 }
 
+static void RepaintItem(Int16 i)
+{
+    if (i >= 0 && i < (Int16)gTL.numItems)
+        Repaint(gTL.items[i].y - gTL.scroll, gTL.items[i].height);
+}
+
+/* Full redraw of the list. */
 static void DrawList(void)
 {
-    RectangleType r, src;
+    RectangleType r;
     Err err;
 
     GetListBounds(&r);
@@ -96,6 +140,7 @@ static void DrawList(void)
     gIdleDone = false;  /* newly visible posts may need images */
 
     if (!gTL.numItems) {
+        gOffValid = false;
         RenderMessage(&r, !gPrefs.host[0] || !gPrefs.key[0]
                           ? "Set up the gateway: Menu > Prefs"
                           : "Nothing here. Tap Reload.");
@@ -108,17 +153,42 @@ static void DrawList(void)
         gOffW = r.extent.x;
         gOffH = r.extent.y;
     }
-    if (gOff) {
-        WinHandle old = WinSetDrawWindow(gOff);
-        DrawItems(0, 0, r.extent.x, r.extent.y);
-        WinSetDrawWindow(old);
-        RctSetRectangle(&src, 0, 0, r.extent.x, r.extent.y);
-        WinCopyRectangle(gOff, NULL, &src, r.topLeft.x, r.topLeft.y, winPaint);
-    } else {
-        WinSetClip(&r);
-        DrawItems(r.topLeft.x, r.topLeft.y, r.extent.x, r.extent.y);
-        WinResetClip();
+    gOffValid = (gOff != NULL);
+    gOffScroll = gTL.scroll;
+    Repaint(0, r.extent.y);
+}
+
+/* Show gTL.scroll after it changed. The pixels already drawn are shifted
+ * and only the rows that scrolled into view are drawn, which keeps dragging
+ * smooth even with many images on screen. */
+static void ScrollView(void)
+{
+    RectangleType r, all, vacated;
+    Int16 d;
+    WinHandle old;
+
+    GetListBounds(&r);
+    if (Layout(r.extent.x) || !gOff || !gOffValid) {
+        DrawList();
+        return;
     }
+    ClampScroll(r.extent.y);
+    d = gTL.scroll - gOffScroll;
+    if (!d)
+        return;
+    if (d >= r.extent.y || -d >= r.extent.y) {
+        DrawList();
+        return;
+    }
+    UpdateScrollBar(r.extent.y);
+    gIdleDone = false;
+    old = WinSetDrawWindow(gOff);
+    RctSetRectangle(&all, 0, 0, r.extent.x, r.extent.y);
+    WinScrollRectangle(&all, d > 0 ? winUp : winDown, d > 0 ? d : -d, &vacated);
+    gOffScroll = gTL.scroll;
+    DrawItems(0, 0, r.extent.x, &vacated);
+    WinSetDrawWindow(old);
+    WinCopyRectangle(gOff, NULL, &all, r.topLeft.x, r.topLeft.y, winPaint);
 }
 
 static Boolean GadgetHandler(FormGadgetTypeInCallback *gadgetP, UInt16 cmd, void *paramP)
@@ -213,17 +283,107 @@ static Err Load(Boolean older)
     return err;
 }
 
-static void ScrollBy(Int16 delta)
+static Boolean CanPageOlder(void)
+{
+    return gTL.cursor[0] && gTL.view.kind != kindThread && gTL.view.kind != kindSearch;
+}
+
+/* Scroll so item i shows: all of it if it fits, else its top (or, coming
+ * from below, its end). */
+static void Reveal(Int16 i, Coord viewH, Boolean fromBelow)
+{
+    ItemType *it = &gTL.items[i];
+    Int16 bottom = it->y + it->height;
+    if (it->height <= viewH) {
+        if (it->y < gTL.scroll)
+            gTL.scroll = it->y;
+        else if (bottom > gTL.scroll + viewH)
+            gTL.scroll = bottom - viewH;
+    } else if (!fromBelow)
+        gTL.scroll = it->y;
+    else if (bottom <= gTL.scroll)
+        gTL.scroll = bottom - viewH;
+}
+
+/* First (or last) item at least partly on screen. */
+static Int16 VisibleItem(Coord viewH, Boolean last)
+{
+    Int16 i, found = -1;
+    for (i = 0; i < (Int16)gTL.numItems; i++) {
+        ItemType *it = &gTL.items[i];
+        if (it->y + it->height <= gTL.scroll)
+            continue;
+        if (it->y >= gTL.scroll + viewH)
+            break;
+        /* prefer a post whose top is on screen */
+        if (!last && found < 0 && it->y < gTL.scroll && i + 1 < (Int16)gTL.numItems &&
+            gTL.items[i + 1].y < gTL.scroll + viewH)
+            continue;
+        found = i;
+        if (!last)
+            break;
+    }
+    return found;
+}
+
+static Boolean OnScreen(Int16 i, Coord viewH)
+{
+    return i >= 0 && i < (Int16)gTL.numItems &&
+           gTL.items[i].y + gTL.items[i].height > gTL.scroll &&
+           gTL.items[i].y < gTL.scroll + viewH;
+}
+
+/* 5-way up/down: move the highlight one post; a post taller than the
+ * screen is scrolled through a page at a time first. */
+static void NavMove(Int16 dir)
 {
     RectangleType r;
-    Int16 before = gTL.scroll;
+    Coord viewH;
+    Int16 old = gTL.hl, step;
+
+    if (!gTL.numItems)
+        return;
     GetListBounds(&r);
-    gTL.scroll += delta;
-    ClampScroll(r.extent.y);
-    if (gTL.scroll != before)
-        DrawList();
-    else if (delta > 0 && gTL.cursor[0] && gTL.view.kind != kindThread)
-        Load(true);  /* paging past the end fetches older posts */
+    viewH = r.extent.y;
+    step = viewH > 30 ? viewH - 20 : viewH;
+    Layout(r.extent.x);
+
+    if (!OnScreen(old, viewH)) {
+        gTL.hl = VisibleItem(viewH, dir == navUp);
+    } else {
+        ItemType *it = &gTL.items[old];
+        if (dir == navDown) {
+            Int16 below = it->y + it->height - (gTL.scroll + viewH);
+            if (below > 0)
+                gTL.scroll += below < step ? below : step;
+            else if (old + 1 < (Int16)gTL.numItems) {
+                gTL.hl = old + 1;
+                Reveal(gTL.hl, viewH, false);
+            } else if (CanPageOlder()) {
+                /* past the end: fetch older posts and step onto the first */
+                Load(true);
+                if (gTL.hl >= 0 && gTL.hl + 1 < (Int16)gTL.numItems) {
+                    gTL.hl++;
+                    Reveal(gTL.hl, viewH, false);
+                }
+                DrawList();
+                return;
+            }
+        } else {
+            Int16 above = gTL.scroll - it->y;
+            if (above > 0)
+                gTL.scroll -= above < step ? above : step;
+            else if (old > 0) {
+                gTL.hl = old - 1;
+                Reveal(gTL.hl, viewH, true);
+            }
+        }
+    }
+    ScrollView();
+    if (gTL.hl != old) {
+        RepaintItem(old);
+        RepaintItem(gTL.hl);
+    }
 }
 
 static Int16 ItemAt(Coord ly)
@@ -295,6 +455,7 @@ static void OpenItem(Int16 i, Coord dx, Coord dy)
         return;
     }
     gTL.selected = i;
+    gTL.hl = i;  /* still marked when you come back */
     FrmGotoForm(DetailForm);
 }
 
@@ -313,11 +474,8 @@ static Boolean PenDown(EventType *e)
         if (!dragged && (ny - y > kDragSlop || y - ny > kDragSlop))
             dragged = true;
         if (dragged && ny != lastY) {
-            Int16 before = gTL.scroll;
             gTL.scroll -= (ny - lastY);
-            ClampScroll(r.extent.y);
-            if (gTL.scroll != before)
-                DrawList();
+            ScrollView();
             lastY = ny;
         }
         if (down)
@@ -358,12 +516,44 @@ Boolean MainIdle(void)
         if (top >= r.extent.y)
             break;
         if (RenderFetchOne(it, r.extent.x, ItemFlags(i))) {
-            DrawList();
+            RepaintItem(i);  /* only this post changed */
             return true;
         }
     }
     gIdleDone = true;
     return false;
+}
+
+static UInt32 HeapFreeKB(void)
+{
+    UInt32 freeBytes = 0, maxChunk = 0;
+    MemHeapFreeBytes(0, &freeBytes, &maxChunk);  /* heap 0: dynamic heap */
+    return freeBytes / 1024;
+}
+
+/* Drop cached images and the drawing buffer, then report the heap. The
+ * posts stay; their images load again as they come into view. */
+static void FreeMemory(void)
+{
+    char msg[100], num[12];
+    UInt32 before = HeapFreeKB(), after;
+
+    ThumbFlush();
+    FreeOffscreen();
+    MemHeapCompact(0);
+    DrawList();  /* re-creates the drawing buffer; count it as in use */
+    after = HeapFreeKB();
+    StrCopy(msg, "Released ");
+    StrIToA(num, after > before ? after - before : 0);
+    StrCat(msg, num);
+    StrCat(msg, " KB.\nFree memory: ");
+    StrIToA(num, after);
+    StrCat(msg, num);
+    StrCat(msg, " KB of ");
+    StrIToA(num, MemHeapSize(0) / 1024);
+    StrCat(msg, num);
+    StrCat(msg, " KB.");
+    ShowInfo(msg);
 }
 
 static Boolean DoMenu(UInt16 id)
@@ -397,6 +587,12 @@ static Boolean DoMenu(UInt16 id)
         return true;
     case MenuAbout:
         FrmAlert(AboutAlert);
+        return true;
+    case MenuFreeMemory:
+        FreeMemory();
+        return true;
+    case MenuExit:
+        AppExit();
         return true;
     }
     return false;
@@ -446,7 +642,7 @@ Boolean MainFormHandleEvent(EventType *e)
 
     case sclRepeatEvent:
         gTL.scroll = e->data.sclRepeat.newValue;
-        DrawList();
+        ScrollView();
         return false;
 
     case sclExitEvent:
@@ -500,14 +696,11 @@ Boolean MainFormHandleEvent(EventType *e)
     case keyDownEvent:
         if (HandleNavKey(e, &dir)) {
             GetListBounds(&r);
-            if (dir == navUp)
-                ScrollBy(-(r.extent.y - 20));
-            else if (dir == navDown)
-                ScrollBy(r.extent.y - 20);
+            if (dir == navUp || dir == navDown)
+                NavMove(dir);
             else if (dir == navSelect) {
-                Int16 i = ItemAt(gTL.scroll + 1);
-                if (i >= 0 && gTL.items[i].y < gTL.scroll && i + 1 < (Int16)gTL.numItems)
-                    i++;  /* prefer the first fully visible post */
+                Int16 i = OnScreen(gTL.hl, r.extent.y) ? gTL.hl
+                                                         : VisibleItem(r.extent.y, false);
                 OpenItem(i, -1, -1);
             } else if (dir == navLeft && gTL.historyLen) {
                 EventType ev;

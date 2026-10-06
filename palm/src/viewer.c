@@ -1,6 +1,20 @@
 /* Full-screen image viewer (popup form over the list or detail form). */
 #include "PalmFedi.h"
 
+/* This file is rarely used code: it lives in the second code segment
+ * (see PalmFedi.def). */
+static void Bounds(RectangleType *r) SEG_DIALOGS;
+static void FreeImage(void) SEG_DIALOGS;
+static const char *Alt(void) SEG_DIALOGS;
+static void Draw(void) SEG_DIALOGS;
+static void ClampAndDraw(void) SEG_DIALOGS;
+static void Load(void) SEG_DIALOGS;
+static void SetTitleAndButtons(FormPtr frm) SEG_DIALOGS;
+static void LayoutForm(FormPtr frm, Coord W, Coord H) SEG_DIALOGS;
+static void Step(Int16 delta) SEG_DIALOGS;
+static void Close(void) SEG_DIALOGS;
+static Boolean GadgetHandler(FormGadgetTypeInCallback *gadgetP, UInt16 cmd, void *paramP) SEG_DIALOGS;
+
 #define kTitleH   15
 #define kButtonsH 15
 #define kScrollW  7

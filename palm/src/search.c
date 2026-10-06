@@ -2,6 +2,8 @@
  * accounts, hashtags and posts, see gateway /p/tl?t=search. */
 #include "PalmFedi.h"
 
+/* Rarely used code: second code segment (see PalmFedi.def). */
+
 static char gLastQuery[64];
 
 Boolean SearchRun(void)

@@ -6,6 +6,8 @@
 #define kScrollW  7
 
 static Int16 gScroll = 0, gHeight = 0;
+static ItemType *gMeasured = NULL;   /* gHeight is valid for this item... */
+static Coord gMeasuredW = 0;         /* ...at this width */
 static Boolean gIdleDone = true;
 static char gRelFlags[8];   /* relationship with the post's author, if fetched */
 
@@ -34,7 +36,12 @@ static void Draw(void)
         RenderMessage(&r, "No post");
         return;
     }
-    gHeight = RenderItem(it, 0, 0, r.extent.x, renderFull, NULL);
+    /* measuring wraps the whole text: only redo it when something changed */
+    if (it != gMeasured || r.extent.x != gMeasuredW) {
+        gHeight = RenderItem(it, 0, 0, r.extent.x, renderFull, NULL);
+        gMeasured = it;
+        gMeasuredW = r.extent.x;
+    }
     maxScroll = gHeight - r.extent.y;
     if (maxScroll < 0)
         maxScroll = 0;
@@ -120,6 +127,7 @@ static void Follow(void)
         if (AcctFollowToggle(it->f[fAcctId], it->f[fName], it->flags, sizeof(it->flags), true)) {
             it->f[fContext] = (char *)AcctRelLabel(it->flags);
             it->height = -1;
+            gMeasured = NULL;
             SyncButtons(FrmGetActiveForm());
             Draw();
         }
@@ -187,6 +195,7 @@ static void Vote(void)
     }
     MemPtrFree(buf);
     it->height = -1;
+    gMeasured = NULL;
     Draw();
 }
 
@@ -213,6 +222,7 @@ static Boolean DoAction(const char *action)
     StrNCopyZ(it->counts, f[2], sizeof(it->counts));
     MemPtrFree(buf);
     it->height = -1;  /* main list re-measures it */
+    gMeasured = NULL;
     return true;
 }
 
@@ -320,6 +330,7 @@ Boolean DetailFormHandleEvent(EventType *e)
     switch (e->eType) {
     case frmOpenEvent:
         gScroll = 0;
+        gMeasured = NULL;
         DiaFormOpen(frm, true);
         DiaResizeForm(frm, &r);
         LayoutForm(frm, r.extent.x, r.extent.y);
@@ -338,6 +349,12 @@ Boolean DetailFormHandleEvent(EventType *e)
         FrmDrawForm(frm);
         gIdleDone = false;
         return true;
+
+    case frmCloseEvent:
+        /* the big previews are only used here; keep list thumbnails */
+        ThumbTrim(2 * (kThumbStd + 4));
+        gMeasured = NULL;
+        return false;
 
     case winDisplayChangedEvent:
         if (DiaResizeForm(frm, &r)) {

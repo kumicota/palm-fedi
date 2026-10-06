@@ -10,6 +10,8 @@
 
 #define kStripBytes   16000
 #define kThumbSlots   40
+#define kThumbBudget  200000L    /* bytes of pixels kept in the cache */
+#define kThumbRecent  32         /* lookups: images drawn this recently stay */
 
 typedef struct {
     BitmapType   *base;
@@ -34,6 +36,7 @@ static ThumbSlot *gThumbs = NULL;
 static UInt32 gThumbClock = 0;
 static ColorTableType *gColorTable = NULL;
 static Boolean gHiRes = false;
+static Boolean gOutOfMemory = false;     /* last ImgLoad failed to allocate */
 
 Boolean ImgHiRes(void)
 {
@@ -164,6 +167,7 @@ PfImage *ImgLoad(const char *mediaKey, UInt16 maxW, UInt16 maxH, Boolean crop)
 
     impl = (PfImageImpl *)MemPtrNew(sizeof(PfImageImpl) + (numStrips - 1) * sizeof(StripType));
     if (!impl) {
+        gOutOfMemory = true;
         HttpClose(&c);
         return NULL;
     }
@@ -175,14 +179,17 @@ PfImage *ImgLoad(const char *mediaKey, UInt16 maxW, UInt16 maxH, Boolean crop)
     impl->hdr.stdH = density == kDensityDouble ? (h + 1) / 2 : h;
     impl->hdr.stripRows = stripRows;
     impl->hdr.numStrips = numStrips;
+    impl->hdr.bytes = (UInt32)rowBytes * h;
 
     for (i = 0; i < numStrips; i++) {
         UInt16 rows = (i == numStrips - 1) ? h - i * stripRows : stripRows;
         UInt16 bmpRowBytes, r;
         UInt8 *bits;
         BitmapType *bmp = BmpCreate(w, rows, (UInt8)bpp, bpp == 8 ? gColorTable : NULL, &err);
-        if (!bmp)
+        if (!bmp) {
+            gOutOfMemory = true;
             goto fail;
+        }
         impl->strips[i].base = bmp;
         BmpGetDimensions(bmp, NULL, NULL, &bmpRowBytes);
         bits = (UInt8 *)BmpGetBits(bmp);
@@ -207,8 +214,10 @@ PfImage *ImgLoad(const char *mediaKey, UInt16 maxW, UInt16 maxH, Boolean crop)
         if (density == kDensityDouble) {
             impl->strips[i].v3 = BmpCreateBitmapV3(bmp, kDensityDouble, bits,
                                                    bpp == 8 ? gColorTable : NULL);
-            if (!impl->strips[i].v3)
+            if (!impl->strips[i].v3) {
+                gOutOfMemory = true;
                 goto fail;
+            }
         }
     }
     HttpClose(&c);
@@ -267,7 +276,13 @@ PfImage *ThumbGet(const char *key, UInt16 maxW, UInt16 maxH, Boolean crop,
     s = &gThumbs[victim];
     ImgFree(s->img);
     MemSet(s, sizeof(ThumbSlot), 0);
+    gOutOfMemory = false;
     s->img = ImgLoad(key, maxW, maxH, crop);
+    if (!s->img && gOutOfMemory) {
+        /* heap full: drop every cached image and try once more */
+        ThumbFlush();
+        s->img = ImgLoad(key, maxW, maxH, crop);
+    }
     StrNCopyZ(s->key, key, sizeof(s->key));
     s->w = maxW;
     s->h = maxH;
@@ -275,7 +290,49 @@ PfImage *ThumbGet(const char *key, UInt16 maxW, UInt16 maxH, Boolean crop,
     s->failed = (s->img == NULL);
     s->used = ++gThumbClock;
     *failed = s->failed;
+
+    /* stay within the byte budget: evict least recently used images */
+    while (ThumbBytes() > kThumbBudget) {
+        ThumbSlot *lru = NULL;
+        for (i = 0; i < kThumbSlots; i++) {
+            ThumbSlot *t = &gThumbs[i];
+            /* never evict what is on screen: it would be fetched again
+             * right away, forever */
+            if (t != s && t->img && gThumbClock - t->used > kThumbRecent &&
+                (!lru || t->used < lru->used))
+                lru = t;
+        }
+        if (!lru)
+            break;
+        ImgFree(lru->img);
+        MemSet(lru, sizeof(ThumbSlot), 0);
+    }
     return s->img;
+}
+
+UInt32 ThumbBytes(void)
+{
+    UInt32 total = 0;
+    UInt16 i;
+    if (!gThumbs)
+        return 0;
+    for (i = 0; i < kThumbSlots; i++)
+        if (gThumbs[i].img)
+            total += gThumbs[i].img->bytes;
+    return total;
+}
+
+void ThumbTrim(UInt16 maxW)
+{
+    UInt16 i;
+    if (!gThumbs)
+        return;
+    for (i = 0; i < kThumbSlots; i++) {
+        if (gThumbs[i].key[0] && gThumbs[i].w > maxW) {
+            ImgFree(gThumbs[i].img);
+            MemSet(&gThumbs[i], sizeof(ThumbSlot), 0);
+        }
+    }
 }
 
 void ThumbFlush(void)

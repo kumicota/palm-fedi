@@ -60,10 +60,11 @@ Err NetStart(void)
     return errNone;
 }
 
-void NetStop(void)
+void NetStop(Boolean now)
 {
     if (gNetOpen) {
-        NetLibClose(gNetRef, false);  /* keep the link up briefly for other apps */
+        /* normally keep the link up briefly for other apps; Exit drops it */
+        NetLibClose(gNetRef, now);
         gNetOpen = false;
     }
 }

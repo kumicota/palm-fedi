@@ -1,6 +1,15 @@
 /* Preferences and login dialogs (modal). */
 #include "PalmFedi.h"
 
+/* This file is rarely used code: it lives in the second code segment
+ * (see PalmFedi.def). */
+static void SetCheck(UInt16 id, Boolean on) SEG_DIALOGS;
+static Boolean GetCheck(UInt16 id) SEG_DIALOGS;
+static void SetPopup(UInt16 triggerID, UInt16 listID, UInt16 sel, char *label, UInt16 size) SEG_DIALOGS;
+static void ReadFields(void) SEG_DIALOGS;
+static void TestConnection(void) SEG_DIALOGS;
+static Boolean PrefsHandleEvent(EventType *e) SEG_DIALOGS;
+
 PrefsType gPrefs;
 
 static char gDepthLabel[16];

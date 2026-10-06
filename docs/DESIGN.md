@@ -34,8 +34,9 @@ pagination cursor always points just past the last item actually sent.
 
 ```
 main.c       PilotMain, event loop (idle-time image loading via nilEvents)
-mainform.c   timeline list: gadget + scrollbar, offscreen double buffer,
-             drag-to-scroll, 5-way, auto paging, DIA re-layout
+mainform.c   timeline list: gadget + scrollbar, offscreen double buffer
+             with partial redraws, drag-to-scroll, 5-way highlight, auto
+             paging, DIA re-layout, Free memory
 detail.c     single post: full text, 2-column media, alt text, actions,
              poll voting, profile follow button
 compose.c    new post / reply: CW, visibility, character count, Edit menu
@@ -57,14 +58,21 @@ util.c       field helpers, DIA (PINS) support, 5-way key mapping
 * A timeline page is one `MemPtrNew` chunk (≤ 62 KB, in practice ≤ 30 KB).
   Records are split **in place**, and items hold pointers into the page. Only
   the mutable bits (flags, counts) are copied into the item.
-* Up to 8 pages / 120 items are kept. Paging further back drops the oldest page.
+* Up to 6 pages / 100 items are kept. Paging further back drops the oldest page.
 * Images are streamed into **strips** of at most 16 KB each, so a 320×800
   picture never needs a 500 KB block. Each strip is a `BmpCreate` bitmap plus
   a `BmpCreateBitmapV3(..., kDensityDouble, ...)` wrapper so it draws at
   native resolution with ordinary standard-coordinate calls.
-* A 40-slot LRU cache holds thumbnails and avatars (~10 KB each at 16-bit).
-  The viewer's full image isn't cached and is freed on close. If an allocation
-  fails, the cache is flushed and the load retried once.
+* An LRU cache of up to 40 thumbnails and avatars (~10 KB each at 16-bit) is
+  kept within a 200 KB pixel budget. Images drawn in the last few lookups are
+  never evicted (that would make the idle loader fetch them again forever),
+  so a screen full of images can briefly go over budget. The post view's big
+  previews are dropped when it closes, and the viewer's full image isn't
+  cached at all. If an allocation fails, the cache is flushed and the load
+  retried once.
+* *Free memory* flushes the cache and the drawing buffer and reports the
+  dynamic heap; *Exit* quits and closes NetLib at once instead of letting the
+  connection linger.
 * 8-bit mode halves image memory: the gateway dithers to a fixed 256-colour
   palette (6×6×6 cube + 40 greys) that the app attaches as the bitmap colour
   table.
@@ -100,14 +108,29 @@ util.c       field helpers, DIA (PINS) support, 5-way key mapping
 * Content warnings show `CW: …` plus `[tap to read]`. Sensitive media appear
   as `[2 sensitive media]` until opened.
 * In a thread, the post you opened from has a blue bar and is scrolled into view.
+* The 5-way highlight is a tinted background with a blue frame. Up/down move
+  it one post; a post taller than the screen is scrolled a page at a time
+  before the highlight moves on. If the highlight has scrolled off screen,
+  the first press picks a post on screen. The post you opened stays
+  highlighted when you come back.
+
+### Drawing
+
+The list is drawn into an offscreen window and copied to the screen.
+Scrolling shifts the pixels already there (`WinScrollRectangle`) and draws
+only the strip that came into view; a newly loaded image or a highlight
+change repaints just that post. Only a layout change (new page, resize,
+expanded CW) redraws everything. Text lines outside the clip are measured
+but not drawn, colour indexes are looked up once, and the post view
+re-measures its text only when the post changes, not on every scroll step.
 
 ### Event loop and loading
 
 All networking is synchronous (NetLib calls block with a 20 s timeout). To keep
 the UI responsive while images load, the loop calls `EvtGetEvent` with a
 1-tick timeout only while there is image work left. Each `nilEvent` fetches
-**one** missing thumbnail or avatar for a visible post and redraws, so the user
-can scroll or tap between fetches.
+**one** missing thumbnail or avatar for a visible post and repaints that post,
+so the user can scroll or tap between fetches.
 
 ### LifeDrive specifics
 

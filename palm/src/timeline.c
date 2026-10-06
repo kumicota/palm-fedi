@@ -25,6 +25,7 @@ Boolean TLInit(void)
     gTL.items = (ItemType *)MemPtrNew(sizeof(ItemType) * kMaxItems);
     gTL.focus = -1;
     gTL.selected = -1;
+    gTL.hl = -1;
     gTL.view.kind = gPrefs.lastKind < kindThread ? gPrefs.lastKind : kindHome;
     StrCopy(gTL.view.title, TLKindName(gTL.view.kind));
     return gTL.items != NULL;
@@ -44,6 +45,7 @@ void TLClear(void)
     gTL.scroll = 0;
     gTL.totalHeight = 0;
     gTL.selected = -1;
+    gTL.hl = -1;
 }
 
 void TLFree(void)
@@ -58,7 +60,7 @@ void TLFree(void)
 static void DropFirstPage(void)
 {
     UInt16 i, keep = 0;
-    Int16 removedHeight = 0;
+    Int16 removedHeight = 0, dropped;
 
     for (i = 0; i < gTL.numItems; i++) {
         if (gTL.items[i].page == 0) {
@@ -71,6 +73,9 @@ static void DropFirstPage(void)
         gTL.items[keep].page--;
         keep++;
     }
+    dropped = (Int16)(gTL.numItems - keep);  /* later indices shift down */
+    gTL.hl = gTL.hl >= dropped ? gTL.hl - dropped : -1;
+    gTL.selected = -1;
     gTL.numItems = keep;
     MemPtrFree(gTL.pages[0]);
     for (i = 1; i < gTL.numPages; i++)
@@ -122,7 +127,7 @@ Err TLLoad(Boolean older)
     ProtoFields(records[0], head, 4);
     StrNCopyZ(gTL.cursor, head[1], sizeof(gTL.cursor));
     if (gTL.view.kind == kindThread && !older)
-        gTL.focus = gTL.numItems + StrAToI(head[2]);
+        gTL.hl = gTL.focus = gTL.numItems + StrAToI(head[2]);
 
     gTL.pages[gTL.numPages] = buf;
     for (i = 1; i < n && gTL.numItems < kMaxItems; i++)

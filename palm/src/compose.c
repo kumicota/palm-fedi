@@ -1,6 +1,16 @@
 /* Compose / reply form. */
 #include "PalmFedi.h"
 
+/* This file is rarely used code: it lives in the second code segment
+ * (see PalmFedi.def). */
+static void SetVis(char code) SEG_DIALOGS;
+static void UpdateCount(void) SEG_DIALOGS;
+static void UpdateScroll(void) SEG_DIALOGS;
+static void LayoutForm(FormPtr frm, Coord W, Coord H) SEG_DIALOGS;
+static void Done(Boolean posted) SEG_DIALOGS;
+static void Post(void) SEG_DIALOGS;
+static Boolean EditMenu(UInt16 id) SEG_DIALOGS;
+
 #define kMaxPostChars 4000
 
 ComposeArgs gCompose;

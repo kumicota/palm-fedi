@@ -4,6 +4,16 @@
 #define kMinRomVersion sysMakeROMVersion(5, 0, 0, sysROMStageRelease, 0)
 
 static Boolean gIdleWork = false;
+static Boolean gExiting = false;   /* Exit menu: release everything now */
+
+void AppExit(void)
+{
+    EventType e;
+    gExiting = true;
+    MemSet(&e, sizeof(e), 0);
+    e.eType = appStopEvent;  /* the system then returns to the launcher */
+    EvtAddEventToQueue(&e);
+}
 
 static void LoadPrefs(void)
 {
@@ -40,7 +50,7 @@ static void AppStop(void)
     PrefSetAppPreferences(appCreator, appPrefID, appPrefVersion, &gPrefs, sizeof(gPrefs), true);
     TLFree();
     ImgShutdown();
-    NetStop();
+    NetStop(gExiting);
 }
 
 static Boolean AppHandleEvent(EventType *e)

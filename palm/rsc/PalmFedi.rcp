@@ -3,7 +3,7 @@
  * (160x225) or the LifeDrive is rotated (240x160). */
 #include "../src/PalmFediRsc.h"
 
-VERSION 1 "1.1"
+VERSION 1 "1.2"
 APPLICATIONICONNAME ID 1000 "PalmFedi"
 
 ICON ID AppIconFamily
@@ -58,7 +58,10 @@ BEGIN
         MENUITEM "Preferences..." ID MenuPrefs "P"
         MENUITEM "Log in..."      ID MenuLogin
         MENUITEM SEPARATOR
+        MENUITEM "Free memory"    ID MenuFreeMemory
         MENUITEM "About PalmFedi" ID MenuAbout
+        MENUITEM SEPARATOR
+        MENUITEM "Exit"           ID MenuExit "Q"
     END
 END
 
@@ -226,7 +229,7 @@ ALERT ID AboutAlert
 INFORMATION
 BEGIN
     TITLE "About PalmFedi"
-    MESSAGE "PalmFedi 1.1\nAkkoma / fediverse client for Palm OS 5.\n\nNeeds the PalmFedi gateway running on a computer you trust."
+    MESSAGE "PalmFedi 1.2\nAkkoma / fediverse client for Palm OS 5.\n\nNeeds the PalmFedi gateway running on a computer you trust."
     BUTTONS "OK"
 END
 
